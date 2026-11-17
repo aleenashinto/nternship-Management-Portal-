@@ -254,51 +254,98 @@ const INITIAL_NOTIFICATIONS = [
 
 // Helper to get or set local store
 const getStore = (key, defaultVal) => {
-  const val = localStorage.getItem(`portal_mock_${key}`);
-  if (!val) {
-    localStorage.setItem(`portal_mock_${key}`, JSON.stringify(defaultVal));
+  try {
+    const val = localStorage.getItem(`portal_mock_${key}`);
+    if (!val) {
+      localStorage.setItem(`portal_mock_${key}`, JSON.stringify(defaultVal));
+      return defaultVal;
+    }
+    return JSON.parse(val);
+  } catch {
     return defaultVal;
   }
-  return JSON.parse(val);
 };
 
 const setStore = (key, val) => {
-  localStorage.setItem(`portal_mock_${key}`, JSON.stringify(val));
+  try {
+    localStorage.setItem(`portal_mock_${key}`, JSON.stringify(val));
+  } catch (e) {
+    console.error(e);
+  }
 };
 
 export const handleMockRequest = async (url, method = 'get', data = null) => {
-  const cleanUrl = url.replace(/^\/api/, '').replace(/\/$/, '');
+  // 1. Clean URL
+  let cleanUrl = url || '';
+  try {
+    if (cleanUrl.startsWith('http')) {
+      cleanUrl = new URL(cleanUrl).pathname;
+    }
+  } catch {}
+  cleanUrl = cleanUrl.split('?')[0]; // strip query string
+  cleanUrl = cleanUrl.replace(/^\/api/, '').replace(/\/$/, '');
+
+  // 2. Parse data safely whether it is JSON String, FormData, or Object
+  let parsedData = data;
+  if (typeof data === 'string') {
+    try {
+      parsedData = JSON.parse(data);
+    } catch {
+      parsedData = {};
+    }
+  } else if (data && typeof data === 'object' && typeof data.entries === 'function') {
+    // FormData
+    parsedData = {};
+    for (let [k, v] of data.entries()) {
+      parsedData[k] = v;
+    }
+  } else if (!parsedData) {
+    parsedData = {};
+  }
+
   const activeUser = JSON.parse(localStorage.getItem('portal_user') || 'null');
 
   // 1. Auth Login
   if (cleanUrl === '/auth/login' && method.toLowerCase() === 'post') {
-    const { username, password } = data || {};
-    const u = INITIAL_USERS[username];
+    const rawUser = parsedData?.username || '';
+    const trimmedUser = rawUser.trim().toLowerCase();
+
+    // Check predefined users first
+    const u = INITIAL_USERS[trimmedUser];
     if (u) {
-      // Any password accepted for demo ease, or check standard
+      localStorage.setItem('portal_user', JSON.stringify(u));
       return {
-        access: `mock_jwt_access_${username}`,
-        refresh: `mock_jwt_refresh_${username}`,
+        access: `mock_jwt_access_${trimmedUser}`,
+        refresh: `mock_jwt_refresh_${trimmedUser}`,
         user: u,
       };
     }
-    // Also allow any generic username
-    if (username) {
-      const genericUser = {
-        id: 99,
-        username,
-        email: `${username}@portal.example.com`,
-        full_name: username.toUpperCase(),
-        role: username.includes('hr') ? 'HR' : username.includes('mentor') ? 'MENTOR' : 'INTERN',
-        is_active_intern: true,
-      };
-      return {
-        access: `mock_jwt_access_${username}`,
-        refresh: `mock_jwt_refresh_${username}`,
-        user: genericUser,
-      };
-    }
-    throw { response: { status: 400, data: { detail: 'Invalid username or password.' } } };
+
+    // Dynamic role deduction so any username can test any role:
+    let role = 'HR';
+    if (trimmedUser.includes('mentor') || trimmedUser.includes('lead')) role = 'MENTOR';
+    else if (trimmedUser.includes('intern') || trimmedUser.includes('student') || trimmedUser.includes('emma') || trimmedUser.includes('john')) role = 'INTERN';
+    else if (trimmedUser.includes('admin')) role = 'ADMIN';
+
+    const fallbackUser = {
+      id: Date.now(),
+      username: rawUser || 'demo_user',
+      email: `${trimmedUser || 'user'}@portal.example.com`,
+      first_name: rawUser || 'Demo',
+      last_name: 'User',
+      full_name: (rawUser || 'Demo User').toUpperCase(),
+      role: role,
+      is_active_intern: true,
+      assigned_mentor_name: role === 'INTERN' ? 'David Miller' : null,
+      assigned_mentor: role === 'INTERN' ? 3 : null,
+    };
+
+    localStorage.setItem('portal_user', JSON.stringify(fallbackUser));
+    return {
+      access: `mock_jwt_access_${trimmedUser}`,
+      refresh: `mock_jwt_refresh_${trimmedUser}`,
+      user: fallbackUser,
+    };
   }
 
   // 2. Auth Me
@@ -311,8 +358,8 @@ export const handleMockRequest = async (url, method = 'get', data = null) => {
   if (cleanUrl === '/hr/dashboard') {
     const certs = getStore('certificates', INITIAL_CERTIFICATES);
     const pendingCerts = certs.filter(c => c.status === 'PENDING');
-    const mentors = Object.values(INITIAL_USERS).filter(u => u.role === 'MENTOR');
-    const interns = Object.values(INITIAL_USERS).filter(u => u.role === 'INTERN');
+    const mentors = getStore('mentors', Object.values(INITIAL_USERS).filter(u => u.role === 'MENTOR'));
+    const interns = getStore('interns', Object.values(INITIAL_USERS).filter(u => u.role === 'INTERN'));
     const assignments = getStore('assignments', INITIAL_ASSIGNMENTS);
 
     return {
@@ -337,8 +384,8 @@ export const handleMockRequest = async (url, method = 'get', data = null) => {
       const current = getStore('mentors', Object.values(INITIAL_USERS).filter(u => u.role === 'MENTOR'));
       const newM = {
         id: Date.now(),
-        ...data,
-        full_name: `${data.first_name || ''} ${data.last_name || ''}`.trim() || data.username,
+        ...parsedData,
+        full_name: `${parsedData.first_name || ''} ${parsedData.last_name || ''}`.trim() || parsedData.username,
         role: 'MENTOR',
         assigned_intern_count: 0,
       };
@@ -355,8 +402,8 @@ export const handleMockRequest = async (url, method = 'get', data = null) => {
       const current = getStore('interns', Object.values(INITIAL_USERS).filter(u => u.role === 'INTERN'));
       const newI = {
         id: Date.now(),
-        ...data,
-        full_name: `${data.first_name || ''} ${data.last_name || ''}`.trim() || data.username,
+        ...parsedData,
+        full_name: `${parsedData.first_name || ''} ${parsedData.last_name || ''}`.trim() || parsedData.username,
         role: 'INTERN',
         is_active_intern: true,
       };
@@ -373,9 +420,9 @@ export const handleMockRequest = async (url, method = 'get', data = null) => {
     const current = getStore('interns', Object.values(INITIAL_USERS).filter(u => u.role === 'INTERN'));
     const target = current.find(i => i.id === internId);
     if (target) {
-      target.assigned_mentor = data.mentor_id;
+      target.assigned_mentor = parsedData.mentor_id;
       const mentors = getStore('mentors', Object.values(INITIAL_USERS).filter(u => u.role === 'MENTOR'));
-      const m = mentors.find(m => m.id === data.mentor_id);
+      const m = mentors.find(m => m.id === parsedData.mentor_id);
       target.assigned_mentor_name = m ? m.full_name : null;
       setStore('interns', current);
       return target;
@@ -412,7 +459,7 @@ export const handleMockRequest = async (url, method = 'get', data = null) => {
       target.approved_by_name = activeUser?.full_name || 'Sarah Connor';
       target.approval_date = new Date().toISOString();
       target.certificate_number = `CERT-VERCEL-${Math.random().toString(36).substr(2, 6).toUpperCase()}`;
-      target.certificate_file = '#'; // In-browser generated trigger
+      target.certificate_file = '#';
       setStore('certificates', certs);
       return target;
     }
@@ -424,7 +471,7 @@ export const handleMockRequest = async (url, method = 'get', data = null) => {
     const target = certs.find(c => c.id === certId);
     if (target) {
       target.status = 'REJECTED';
-      target.rejection_reason = data?.reason || 'Requirements not yet met';
+      target.rejection_reason = parsedData?.reason || 'Requirements not yet met';
       setStore('certificates', certs);
       return target;
     }
@@ -453,11 +500,11 @@ export const handleMockRequest = async (url, method = 'get', data = null) => {
       const projs = getStore('projects', INITIAL_PROJECTS);
       const newP = {
         id: Date.now(),
-        title: data?.title || 'New Project',
-        tools_used: typeof data?.tools_used === 'string' ? JSON.parse(data.tools_used) : (data?.tools_used || ['Python']),
-        instructions: data?.instructions || '',
-        data_source_type: data?.data_source_type || 'DATABASE',
-        data_source_description: data?.data_source_description || '',
+        title: parsedData?.title || 'New Project',
+        tools_used: typeof parsedData?.tools_used === 'string' ? JSON.parse(parsedData.tools_used) : (parsedData?.tools_used || ['Python']),
+        instructions: parsedData?.instructions || '',
+        data_source_type: parsedData?.data_source_type || 'DATABASE',
+        data_source_description: parsedData?.data_source_description || '',
         created_by: activeUser?.id || 3,
         created_by_name: activeUser?.full_name || 'David Miller',
         active_assignments_count: 0,
@@ -488,8 +535,8 @@ export const handleMockRequest = async (url, method = 'get', data = null) => {
     if (method.toLowerCase() === 'post') {
       const current = getStore('assignments', INITIAL_ASSIGNMENTS);
       const projs = getStore('projects', INITIAL_PROJECTS);
-      const proj = projs.find(p => p.id === parseInt(data?.project)) || projs[0];
-      const intern = Object.values(INITIAL_USERS).find(i => i.id === parseInt(data?.intern)) || INITIAL_USERS.intern_john;
+      const proj = projs.find(p => p.id === parseInt(parsedData?.project)) || projs[0];
+      const intern = Object.values(INITIAL_USERS).find(i => i.id === parseInt(parsedData?.intern)) || INITIAL_USERS.intern_john;
 
       const newA = {
         id: Date.now(),
@@ -501,8 +548,8 @@ export const handleMockRequest = async (url, method = 'get', data = null) => {
         intern_email: intern.email,
         mentor: activeUser?.id || 3,
         mentor_name: activeUser?.full_name || 'David Miller',
-        assigned_date: data?.assigned_date || new Date().toISOString().split('T')[0],
-        due_date: data?.due_date || new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0],
+        assigned_date: parsedData?.assigned_date || new Date().toISOString().split('T')[0],
+        due_date: parsedData?.due_date || new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0],
         status: 'ASSIGNED',
         score: null,
         evaluation_notes: '',
@@ -521,9 +568,9 @@ export const handleMockRequest = async (url, method = 'get', data = null) => {
     const current = getStore('assignments', INITIAL_ASSIGNMENTS);
     const target = current.find(a => a.id === aId);
     if (target) {
-      target.score = data?.score;
-      target.evaluation_notes = data?.evaluation_notes;
-      target.status = data?.mark_completed ? 'COMPLETED' : data?.request_revision ? 'REVISION_REQUIRED' : 'UNDER_REVIEW';
+      target.score = parsedData?.score;
+      target.evaluation_notes = parsedData?.evaluation_notes;
+      target.status = parsedData?.mark_completed ? 'COMPLETED' : parsedData?.request_revision ? 'REVISION_REQUIRED' : 'UNDER_REVIEW';
       target.evaluated_at = new Date().toISOString();
       setStore('assignments', current);
       return target;
@@ -537,7 +584,7 @@ export const handleMockRequest = async (url, method = 'get', data = null) => {
     const target = current.find(a => a.id === aId);
     if (target) {
       target.status = 'SUBMITTED';
-      target.submission_notes = data?.get ? data.get('submission_notes') : (data?.submission_notes || 'Submitted deliverable');
+      target.submission_notes = parsedData?.submission_notes || 'Submitted deliverable';
       target.submitted_at = new Date().toISOString();
       setStore('assignments', current);
       return target;
@@ -550,13 +597,13 @@ export const handleMockRequest = async (url, method = 'get', data = null) => {
       const current = getStore('extensions', INITIAL_EXTENSIONS);
       const newE = {
         id: Date.now(),
-        assignment: data?.assignment,
+        assignment: parsedData?.assignment,
         project_title: 'Assigned Project',
         current_due_date: new Date().toISOString().split('T')[0],
         intern: activeUser?.id || 5,
         intern_name: activeUser?.full_name || 'John Doe',
-        reason: data?.reason,
-        requested_date: data?.requested_date,
+        reason: parsedData?.reason,
+        requested_date: parsedData?.requested_date,
         status: 'PENDING',
         created_at: new Date().toISOString(),
       };
@@ -572,8 +619,8 @@ export const handleMockRequest = async (url, method = 'get', data = null) => {
     const current = getStore('extensions', INITIAL_EXTENSIONS);
     const target = current.find(e => e.id === extId);
     if (target) {
-      target.status = data?.status;
-      target.mentor_notes = data?.mentor_notes;
+      target.status = parsedData?.status;
+      target.mentor_notes = parsedData?.mentor_notes;
       setStore('extensions', current);
       return target;
     }
@@ -584,8 +631,8 @@ export const handleMockRequest = async (url, method = 'get', data = null) => {
     if (method.toLowerCase() === 'post') {
       const current = getStore('presentations', INITIAL_PRESENTATIONS);
       const projs = getStore('projects', INITIAL_PROJECTS);
-      const proj = projs.find(p => p.id === parseInt(data?.project)) || projs[0];
-      const intern = Object.values(INITIAL_USERS).find(i => i.id === parseInt(data?.intern)) || INITIAL_USERS.intern_emma;
+      const proj = projs.find(p => p.id === parseInt(parsedData?.project)) || projs[0];
+      const intern = Object.values(INITIAL_USERS).find(i => i.id === parseInt(parsedData?.intern)) || INITIAL_USERS.intern_emma;
 
       const newP = {
         id: Date.now(),
@@ -595,11 +642,11 @@ export const handleMockRequest = async (url, method = 'get', data = null) => {
         intern_name: intern.full_name,
         mentor: activeUser?.id || 3,
         mentor_name: activeUser?.full_name || 'David Miller',
-        presentation_date: data?.presentation_date,
-        presentation_time: data?.presentation_time,
-        google_meet_link: data?.google_meet_link || 'https://meet.google.com/new',
+        presentation_date: parsedData?.presentation_date,
+        presentation_time: parsedData?.presentation_time,
+        google_meet_link: parsedData?.google_meet_link || 'https://meet.google.com/new',
         status: 'SCHEDULED',
-        notes: data?.notes || '',
+        notes: parsedData?.notes || '',
       };
       current.unshift(newP);
       setStore('presentations', current);
