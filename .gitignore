@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.sqlite3
+db.sqlite3
+*.log
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+dist/
+
+# OS & IDE
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Media uploads (optional, keep directory structure)
+media/project_instructions/*
+!media/project_instructions/.gitkeep
+media/project_datasets/*
+!media/project_datasets/.gitkeep
+media/project_submissions/*
+!media/project_submissions/.gitkeep
