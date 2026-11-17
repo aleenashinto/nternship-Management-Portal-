@@ -37,13 +37,16 @@ export const AuthProvider = ({ children }) => {
   const login = async (username, password) => {
     const res = await api.post('/auth/login/', { username, password });
     localStorage.setItem('access_token', res.data.access);
-    localStorage.setItem('refresh_token', res.data.refresh);
+    localStorage.setItem('refresh_token', res.data.refresh || 'mock_refresh_token');
     
-    // Fetch user details
-    const userRes = await api.get('/auth/me/');
-    setUser(userRes.data);
-    localStorage.setItem('portal_user', JSON.stringify(userRes.data));
-    return userRes.data;
+    let userData = res.data.user;
+    if (!userData) {
+      const userRes = await api.get('/auth/me/');
+      userData = userRes.data;
+    }
+    setUser(userData);
+    localStorage.setItem('portal_user', JSON.stringify(userData));
+    return userData;
   };
 
   const logout = () => {
