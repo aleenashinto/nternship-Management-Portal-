@@ -56,12 +56,10 @@ const Navbar = ({ onToggleSidebar }) => {
         </button>
 
         <div className="flex items-center space-x-2">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-blue-600 to-blue-800 flex items-center justify-center text-white shadow-md">
-            <GraduationCap className="w-5 h-5" />
-          </div>
+          <img src="/beat-logo.png" alt="Beat" className="h-9 w-auto object-contain" />
           <div>
-            <span className="font-bold text-gray-900 tracking-tight text-base sm:text-lg">
-              InternshipPortal
+            <span className="hidden md:inline-block font-semibold text-gray-700 tracking-tight text-sm border-l border-gray-200 pl-3">
+              Internship Portal
             </span>
             <span className="hidden sm:inline-block ml-2 text-[11px] font-medium text-gray-400 bg-gray-100 px-2 py-0.5 rounded">
               v1.0

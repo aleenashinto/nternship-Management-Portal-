@@ -39,8 +39,8 @@ const Login = () => {
       <div className="w-full max-w-md bg-white rounded-3xl shadow-xl shadow-blue-500/5 border border-gray-100 overflow-hidden">
         {/* Header */}
         <div className="bg-gradient-to-r from-blue-600 to-blue-800 px-8 py-8 text-white text-center">
-          <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-white/10 backdrop-blur-md mb-3 ring-1 ring-white/20 shadow-inner">
-            <GraduationCap className="w-8 h-8 text-white" />
+          <div className="inline-flex items-center justify-center bg-white rounded-2xl px-5 py-2 mb-3 shadow-md">
+            <img src="/beat-logo.png" alt="Beat" className="h-10 w-auto object-contain" />
           </div>
           <h1 className="text-2xl font-bold tracking-tight">Internship Portal</h1>
           <p className="text-blue-100 text-xs mt-1">Role-Based Internship Management System</p>
