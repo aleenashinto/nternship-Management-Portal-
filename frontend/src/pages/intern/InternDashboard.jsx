@@ -113,7 +113,7 @@ const InternDashboard = () => {
       </div>
 
       {/* Certificate Status Banner */}
-      <div className="bg-gradient-to-r from-blue-900 via-indigo-900 to-slate-900 text-white rounded-3xl p-6 sm:p-8 relative overflow-hidden shadow-lg">
+      <div className="bg-gradient-to-r from-blue-800 via-blue-900 to-blue-950 text-white rounded-3xl p-6 sm:p-8 relative overflow-hidden shadow-lg">
         <div className="relative z-10 flex flex-col md:flex-row md:items-center md:justify-between gap-6">
           <div className="max-w-xl">
             <div className="inline-flex items-center space-x-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-white/10 text-amber-300 backdrop-blur-md mb-3 border border-white/10">

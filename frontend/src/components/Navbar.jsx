@@ -56,7 +56,7 @@ const Navbar = ({ onToggleSidebar }) => {
         </button>
 
         <div className="flex items-center space-x-2">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white shadow-md">
+          <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-blue-600 to-blue-800 flex items-center justify-center text-white shadow-md">
             <GraduationCap className="w-5 h-5" />
           </div>
           <div>
