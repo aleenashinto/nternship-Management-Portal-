@@ -39,9 +39,9 @@ const MentorAssignments = () => {
         api.get('/mentor/projects/'),
         api.get('/mentor/interns/')
       ]);
-      setAssignments(assignRes.data.results || assignRes.data || []);
-      setProjects(projRes.data.results || projRes.data || []);
-      setInterns(internRes.data.results || internRes.data || []);
+      setAssignments((d => Array.isArray(d) ? d : [])(assignRes.data?.results ?? assignRes.data));
+      setProjects((d => Array.isArray(d) ? d : [])(projRes.data?.results ?? projRes.data));
+      setInterns((d => Array.isArray(d) ? d : [])(internRes.data?.results ?? internRes.data));
     } catch (e) {
       console.error(e);
     } finally {

@@ -14,7 +14,7 @@ const CertificatesList = () => {
     try {
       setLoading(true);
       const res = await api.get('/hr/certificates/');
-      setCertificates(res.data.results || res.data || []);
+      setCertificates((d => Array.isArray(d) ? d : [])(res.data?.results ?? res.data));
     } catch (e) {
       console.error(e);
     } finally {

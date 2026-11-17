@@ -28,8 +28,8 @@ const InternProjects = () => {
         api.get('/intern/assignments/'),
         api.get('/intern/extensions/')
       ]);
-      setAssignments(assignRes.data.results || assignRes.data || []);
-      setExtensions(extRes.data.results || extRes.data || []);
+      setAssignments((d => Array.isArray(d) ? d : [])(assignRes.data?.results ?? assignRes.data));
+      setExtensions((d => Array.isArray(d) ? d : [])(extRes.data?.results ?? extRes.data));
     } catch (e) {
       console.error(e);
     } finally {

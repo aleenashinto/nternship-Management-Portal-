@@ -10,7 +10,7 @@ const InternPresentations = () => {
     try {
       setLoading(true);
       const res = await api.get('/intern/presentations/');
-      setPresentations(res.data.results || res.data || []);
+      setPresentations((d => Array.isArray(d) ? d : [])(res.data?.results ?? res.data));
     } catch (e) {
       console.error(e);
     } finally {

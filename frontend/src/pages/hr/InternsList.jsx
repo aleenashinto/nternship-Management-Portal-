@@ -28,8 +28,8 @@ const InternsList = () => {
         api.get('/hr/interns/'),
         api.get('/hr/mentors/')
       ]);
-      setInterns(internRes.data.results || internRes.data || []);
-      setMentors(mentorRes.data.results || mentorRes.data || []);
+      setInterns((d => Array.isArray(d) ? d : [])(internRes.data?.results ?? internRes.data));
+      setMentors((d => Array.isArray(d) ? d : [])(mentorRes.data?.results ?? mentorRes.data));
     } catch (e) {
       console.error(e);
     } finally {

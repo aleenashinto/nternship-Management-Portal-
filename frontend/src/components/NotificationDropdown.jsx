@@ -12,7 +12,8 @@ const NotificationDropdown = () => {
   const fetchNotifications = async () => {
     try {
       const res = await api.get('/notifications/');
-      setNotifications(res.data.results || res.data || []);
+      const raw = res.data?.results ?? res.data;
+      setNotifications(Array.isArray(raw) ? raw : []);
     } catch (e) {
       console.error("Failed to fetch notifications", e);
     }

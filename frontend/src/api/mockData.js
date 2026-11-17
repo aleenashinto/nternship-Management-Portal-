@@ -679,14 +679,22 @@ export const handleMockRequest = async (url, method = 'get', data = null) => {
   }
 
   // 15. Notifications
-  if (cleanUrl === '/notifications') {
+  if (cleanUrl === '/notifications' || cleanUrl === '/notifications/') {
     return getStore('notifications', INITIAL_NOTIFICATIONS);
   }
-  if (cleanUrl === '/notifications/mark-all-read') {
+  if (cleanUrl === '/notifications/mark-all-read' || cleanUrl === '/notifications/mark-all-read/') {
     const notifs = getStore('notifications', INITIAL_NOTIFICATIONS);
     notifs.forEach(n => (n.is_read = true));
     setStore('notifications', notifs);
     return { status: 'all marked as read' };
+  }
+  // Mark individual notification as read
+  if (cleanUrl.match(/\/notifications\/\d+\/mark-read/)) {
+    const notifId = parseInt(cleanUrl.split('/')[2]);
+    const notifs = getStore('notifications', INITIAL_NOTIFICATIONS);
+    const target = notifs.find(n => n.id === notifId);
+    if (target) { target.is_read = true; setStore('notifications', notifs); }
+    return { status: 'marked as read' };
   }
 
   return { status: 'ok' };

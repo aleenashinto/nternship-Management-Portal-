@@ -31,7 +31,7 @@ const MentorProjects = () => {
     try {
       setLoading(true);
       const res = await api.get('/mentor/projects/');
-      setProjects(res.data.results || res.data || []);
+      setProjects((d => Array.isArray(d) ? d : [])(res.data?.results ?? res.data));
     } catch (e) {
       console.error(e);
     } finally {

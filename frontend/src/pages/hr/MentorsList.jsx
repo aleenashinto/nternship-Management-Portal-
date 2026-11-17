@@ -17,7 +17,7 @@ const MentorsList = () => {
     try {
       setLoading(true);
       const res = await api.get('/hr/mentors/');
-      setMentors(res.data.results || res.data || []);
+      setMentors((d => Array.isArray(d) ? d : [])(res.data?.results ?? res.data));
     } catch (e) {
       console.error(e);
     } finally {

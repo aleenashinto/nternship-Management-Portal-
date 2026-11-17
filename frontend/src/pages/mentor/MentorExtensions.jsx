@@ -16,7 +16,7 @@ const MentorExtensions = () => {
     try {
       setLoading(true);
       const res = await api.get('/mentor/extensions/');
-      setRequests(res.data.results || res.data || []);
+      setRequests((d => Array.isArray(d) ? d : [])(res.data?.results ?? res.data));
     } catch (e) {
       console.error(e);
     } finally {

@@ -40,7 +40,8 @@ const HRDashboard = () => {
         api.get('/hr/mentors/')
       ]);
       setData(dashRes.data);
-      setMentorsList(mentorRes.data.results || mentorRes.data || []);
+      const rawMentors = mentorRes.data?.results ?? mentorRes.data;
+      setMentorsList(Array.isArray(rawMentors) ? rawMentors : []);
     } catch (e) {
       console.error(e);
     } finally {
