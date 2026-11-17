@@ -117,8 +117,8 @@ const MentorProjects = () => {
   };
 
   const filtered = projects.filter(p =>
-    p.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    p.instructions.toLowerCase().includes(searchTerm.toLowerCase())
+    (p.title || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (p.instructions || '').toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   return (

@@ -45,9 +45,9 @@ const MentorsList = () => {
   };
 
   const filteredMentors = mentors.filter(m =>
-    m.username.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (m.username || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
     (m.full_name && m.full_name.toLowerCase().includes(searchTerm.toLowerCase())) ||
-    m.email.toLowerCase().includes(searchTerm.toLowerCase())
+    (m.email || '').toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   return (

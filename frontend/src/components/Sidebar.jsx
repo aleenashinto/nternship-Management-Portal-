@@ -108,7 +108,7 @@ const Sidebar = ({ isOpen, onClose }) => {
                 {user.full_name || user.username}
               </p>
               <p className="text-[11px] text-gray-400 capitalize">
-                Role: {user.role.toLowerCase()}
+                Role: {(user.role || '').toLowerCase()}
               </p>
             </div>
           </div>

@@ -75,9 +75,9 @@ const InternsList = () => {
   };
 
   const filteredInterns = interns.filter(i =>
-    i.username.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (i.username || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
     (i.full_name && i.full_name.toLowerCase().includes(searchTerm.toLowerCase())) ||
-    i.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (i.email || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
     (i.education_qualification && i.education_qualification.toLowerCase().includes(searchTerm.toLowerCase()))
   );
 
