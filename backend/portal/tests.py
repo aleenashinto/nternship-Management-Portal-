@@ -50,11 +50,28 @@ class InternshipPortalEndToEndTests(TestCase):
         # Unauthenticated request rejected
         self.assertEqual(self.client.get("/api/hr/dashboard/").status_code, 401)
 
-        # Intern cannot access HR or Mentor endpoints
+        # Intern cannot access HR or Mentor endpoints, nor escalate own role via PATCH /api/auth/me/
         self.client.force_authenticate(user=self.intern)
         self.assertEqual(self.client.get("/api/hr/dashboard/").status_code, 403)
         self.assertEqual(self.client.get("/api/mentor/dashboard/").status_code, 403)
         self.assertEqual(self.client.get("/api/intern/profile/").status_code, 200)
+        me_patch = self.client.patch("/api/auth/me/", {"role": "ADMIN"}, format="json")
+        self.assertEqual(me_patch.status_code, 200)
+        self.intern.refresh_from_db()
+        self.assertEqual(self.intern.role, UserRole.INTERN)
+
+        # Mentor cannot assign a project to an intern belonging to another mentor
+        other_mentor = User.objects.create_user(
+            username="other_mentor", email="other@test.local", password="password123", role=UserRole.MENTOR
+        )
+        proj = Project.objects.create(created_by=other_mentor, title="P", instructions="I")
+        self.client.force_authenticate(user=other_mentor)
+        cross_assign = self.client.post(
+            "/api/mentor/assignments/",
+            {"project": proj.id, "intern": self.intern.id, "due_date": str(timezone.now().date())},
+            format="json",
+        )
+        self.assertEqual(cross_assign.status_code, 403)
 
     def test_hr_mentor_and_intern_full_crud(self):
         self.client.force_authenticate(user=self.hr)
@@ -154,6 +171,14 @@ class InternshipPortalEndToEndTests(TestCase):
         self.assertTrue(
             Notification.objects.filter(recipient=self.intern, notification_type="DEADLINE_REMINDER").exists()
         )
+
+        # Score out of bounds (-1 or 105) is rejected with 400
+        bad_ev = self.client.post(
+            f"/api/mentor/assignments/{assignment_id}/evaluate/",
+            {"score": 105, "evaluation_notes": "Invalid score"},
+            format="json",
+        )
+        self.assertEqual(bad_ev.status_code, 400)
 
         # Mentor evaluates assignment as completed
         ev_res = self.client.post(

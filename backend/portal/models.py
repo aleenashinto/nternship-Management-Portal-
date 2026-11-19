@@ -97,6 +97,7 @@ class ProjectAssignmentStatus(models.TextChoices):
     SUBMITTED = 'SUBMITTED', 'Submitted'
     UNDER_REVIEW = 'UNDER_REVIEW', 'Under Review'
     REVISION_REQUIRED = 'REVISION_REQUIRED', 'Revision Required'
+    RESUBMITTED = 'RESUBMITTED', 'Resubmitted'
     COMPLETED = 'COMPLETED', 'Completed'
     OVERDUE = 'OVERDUE', 'Overdue'
 
@@ -167,7 +168,7 @@ class ExtensionRequest(models.Model):
     class RequestStatus(models.TextChoices):
         PENDING = 'PENDING', 'Pending'
         APPROVED = 'APPROVED', 'Approved'
-        REJECTED = 'REVISION_REJECTED', 'Rejected'
+        REJECTED = 'REJECTED', 'Rejected'
 
     assignment = models.ForeignKey(
         ProjectAssignment,

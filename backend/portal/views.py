@@ -363,6 +363,11 @@ class MentorAssignmentsViewSet(viewsets.ModelViewSet):
 
         project = get_object_or_404(Project, id=project_id)
         intern = get_object_or_404(User, id=intern_id, role=UserRole.INTERN)
+        if request.user.role != UserRole.ADMIN and intern.assigned_mentor_id != request.user.id:
+            return Response(
+                {'detail': 'Mentors may assign projects only to their own assigned interns.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
 
         assignment = ProjectAssignment.objects.create(
             project=project,
@@ -397,7 +402,13 @@ class MentorAssignmentsViewSet(viewsets.ModelViewSet):
         request_revision = request.data.get('request_revision', False)
 
         if score is not None:
-            assignment.score = score
+            try:
+                numeric_score = float(score)
+            except (TypeError, ValueError):
+                return Response({'detail': 'Score must be a valid number between 0 and 100.'}, status=status.HTTP_400_BAD_REQUEST)
+            if numeric_score < 0 or numeric_score > 100:
+                return Response({'detail': 'Score must be between 0 and 100.'}, status=status.HTTP_400_BAD_REQUEST)
+            assignment.score = numeric_score
         assignment.evaluation_notes = notes
         assignment.evaluated_at = timezone.now()
 
@@ -568,8 +579,9 @@ class InternAssignmentsViewSet(viewsets.ReadOnlyModelViewSet):
         if file_obj:
             assignment.submission_file = file_obj
         assignment.submission_notes = notes
+        is_resubmission = assignment.status == ProjectAssignmentStatus.REVISION_REQUIRED or assignment.submitted_at is not None
         assignment.submitted_at = timezone.now()
-        assignment.status = ProjectAssignmentStatus.SUBMITTED
+        assignment.status = ProjectAssignmentStatus.RESUBMITTED if is_resubmission else ProjectAssignmentStatus.SUBMITTED
         assignment.save()
 
         # Notify Mentor

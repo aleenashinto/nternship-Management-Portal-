@@ -8,17 +8,26 @@ class UserSerializer(serializers.ModelSerializer):
     assigned_intern_count = serializers.ReadOnlyField()
     assigned_mentor_name = serializers.SerializerMethodField()
     full_name = serializers.SerializerMethodField()
+    password = serializers.CharField(write_only=True, required=False, allow_blank=True)
 
     class Meta:
         model = User
         fields = [
-            'id', 'username', 'email', 'first_name', 'last_name', 'full_name',
+            'id', 'username', 'password', 'email', 'first_name', 'last_name', 'full_name',
             'role', 'phone', 'phone2', 'address', 'education_qualification',
             'source', 'work_start_time', 'work_end_time',
             'assigned_mentor', 'assigned_mentor_name', 'assigned_intern_count',
             'is_active_intern', 'date_joined'
         ]
-        read_only_fields = ['id', 'date_joined']
+        read_only_fields = ['id', 'role', 'date_joined']
+
+    def update(self, instance, validated_data):
+        password = validated_data.pop('password', None)
+        user = super().update(instance, validated_data)
+        if password:
+            user.set_password(password)
+            user.save(update_fields=['password'])
+        return user
 
     def get_full_name(self, obj):
         name = f"{obj.first_name} {obj.last_name}".strip()
