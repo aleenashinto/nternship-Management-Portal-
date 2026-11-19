@@ -1,11 +1,18 @@
 """
 Celery background tasks for deadline reminders and overdue sweeps.
 """
-from celery import shared_task
+try:
+    from celery import shared_task
+except ImportError:
+    def shared_task(*args, **kwargs):
+        def decorator(fn):
+            return fn
+        return decorator
+
 from django.utils import timezone
 from datetime import timedelta
 from .models import ProjectAssignment, ProjectAssignmentStatus
-from .services import notify_user
+from .services import send_notification_and_email
 
 
 @shared_task(name="portal.tasks.send_daily_deadline_reminders")
@@ -34,8 +41,8 @@ def send_daily_deadline_reminders():
 
     sent = 0
     for assignment in due_tomorrow:
-        notify_user(
-            user=assignment.intern,
+        send_notification_and_email(
+            recipient=assignment.intern,
             title=f"Reminder: '{assignment.project.title}' is due tomorrow ({tomorrow})",
             message=(
                 f"Hello {assignment.intern},\n"
@@ -44,7 +51,6 @@ def send_daily_deadline_reminders():
             ),
             notification_type="DEADLINE_REMINDER",
             link="/intern/projects",
-            send_email=True,
         )
         sent += 1
 
