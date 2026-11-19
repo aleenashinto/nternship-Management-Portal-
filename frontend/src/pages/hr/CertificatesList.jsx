@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import api from '../../api/client';
 import Modal from '../../components/Modal';
+import { downloadCertificatePdf } from '../../utils/certificatePdf';
 import { Award, Check, X, Download, FileText, CheckCircle2, AlertCircle, Clock } from 'lucide-react';
 
 const CertificatesList = () => {
@@ -178,16 +179,15 @@ const CertificatesList = () => {
                         </>
                       )}
 
-                      {cert.status === 'APPROVED' && cert.certificate_file && (
-                        <a
-                          href={cert.certificate_file}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors"
+                      {cert.status === 'APPROVED' && (
+                        <button
+                          type="button"
+                          onClick={() => downloadCertificatePdf(cert)}
+                          className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors cursor-pointer"
                         >
                           <Download className="w-3.5 h-3.5" />
                           <span>Download PDF</span>
-                        </a>
+                        </button>
                       )}
                     </td>
                   </tr>

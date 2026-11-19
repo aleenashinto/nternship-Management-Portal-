@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import api from '../../api/client';
+import { downloadCertificatePdf } from '../../utils/certificatePdf';
 import {
   Award, Download, Clock, CheckCircle2, AlertCircle, FileCheck2, ArrowRight
 } from 'lucide-react';
@@ -78,15 +79,14 @@ const InternCertificate = () => {
           </div>
 
           <div className="pt-2">
-            <a
-              href={activeCert.certificate_file}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center space-x-2 px-6 py-3.5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-sm shadow-md shadow-emerald-600/30 transition-all"
+            <button
+              type="button"
+              onClick={() => downloadCertificatePdf(activeCert)}
+              className="inline-flex items-center space-x-2 px-6 py-3.5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-sm shadow-md shadow-emerald-600/30 transition-all cursor-pointer"
             >
               <Download className="w-4 h-4" />
               <span>Download Official Certificate PDF</span>
-            </a>
+            </button>
           </div>
         </div>
       ) : activeCert?.status === 'PENDING' ? (
