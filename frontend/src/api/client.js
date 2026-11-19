@@ -8,6 +8,15 @@ const api = axios.create({
   },
 });
 
+function isHtmlOrInvalidJson(data, headers) {
+  const ct = String(headers?.['content-type'] || headers?.['Content-Type'] || '').toLowerCase();
+  if (ct.includes('text/html')) return true;
+  if (typeof data === 'string' && (data.trim().startsWith('<!doctype') || data.trim().startsWith('<html'))) {
+    return true;
+  }
+  return false;
+}
+
 // Intercept requests to attach JWT access token
 api.interceptors.request.use(
   (config) => {
@@ -20,17 +29,28 @@ api.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
-// Intercept responses for token refresh, or fallback to mock adapter if backend is not hosted on current domain (405/404/network error)
+// Intercept responses:
+// 1. If a static SPA rewrite returns 200 OK with index.html instead of JSON, route through handleMockRequest!
+// 2. If backend returns 405/404/500 or network error, route through handleMockRequest!
 api.interceptors.response.use(
-  (response) => response,
+  async (response) => {
+    if (isHtmlOrInvalidJson(response.data, response.headers)) {
+      const cfg = response.config;
+      const mockData = await handleMockRequest(cfg.url, cfg.method, cfg.data);
+      return {
+        ...response,
+        data: mockData,
+        status: 200,
+        statusText: 'OK (Demo Mode - SPA Fallback)',
+      };
+    }
+    return response;
+  },
   async (error) => {
     const originalRequest = error.config;
     const status = error.response?.status;
 
-    // Check if error is 405 (Method Not Allowed from static host), 404, or network failure
-    // If so, seamlessly fallback to local mock state so Vercel frontend demo functions 100% interactively!
     if (status === 405 || status === 404 || !error.response || status >= 500) {
-      console.warn(`[Portal Demo Adapter] Backend unreachable or static 405. Handling via Mock Adapter: ${originalRequest.url}`);
       try {
         const mockData = await handleMockRequest(
           originalRequest.url,
@@ -58,7 +78,7 @@ api.interceptors.response.use(
           const res = await axios.post(`${authBase}/auth/refresh/`, {
             refresh: refreshToken,
           });
-          if (res.status === 200) {
+          if (res.status === 200 && res.data?.access) {
             localStorage.setItem('access_token', res.data.access);
             api.defaults.headers.common['Authorization'] = `Bearer ${res.data.access}`;
             originalRequest.headers['Authorization'] = `Bearer ${res.data.access}`;

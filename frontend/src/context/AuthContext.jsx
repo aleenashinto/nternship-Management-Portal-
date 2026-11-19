@@ -4,23 +4,45 @@ import { handleMockRequest } from '../api/mockData';
 
 const AuthContext = createContext();
 
-export const AuthProvider = ({ children }) => {
-  const [user, setUser] = useState(() => {
+function isValidUser(u) {
+  return u && typeof u === 'object' && typeof u.role === 'string' && u.role.length > 0;
+}
+
+function parseSavedUser() {
+  try {
     const saved = localStorage.getItem('portal_user');
-    return saved ? JSON.parse(saved) : null;
-  });
+    if (!saved) return null;
+    const parsed = JSON.parse(saved);
+    return isValidUser(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+export const AuthProvider = ({ children }) => {
+  const [user, setUser] = useState(() => parseSavedUser());
   const [loading, setLoading] = useState(true);
 
   const fetchCurrentUser = async () => {
     try {
       const res = await api.get('/auth/me/');
-      setUser(res.data);
-      localStorage.setItem('portal_user', JSON.stringify(res.data));
+      if (isValidUser(res.data)) {
+        setUser(res.data);
+        localStorage.setItem('portal_user', JSON.stringify(res.data));
+      } else {
+        const saved = parseSavedUser();
+        if (saved) {
+          setUser(saved);
+        } else {
+          const fallback = await handleMockRequest('/auth/me', 'get');
+          setUser(fallback);
+          localStorage.setItem('portal_user', JSON.stringify(fallback));
+        }
+      }
     } catch {
-      // If user exists in local storage, keep it
-      const saved = localStorage.getItem('portal_user');
+      const saved = parseSavedUser();
       if (saved) {
-        setUser(JSON.parse(saved));
+        setUser(saved);
       } else {
         setUser(null);
       }
@@ -43,19 +65,19 @@ export const AuthProvider = ({ children }) => {
       const res = await api.post('/auth/login/', { username, password });
       localStorage.setItem('access_token', res.data.access);
       localStorage.setItem('refresh_token', res.data.refresh || 'mock_refresh_token');
-      
+
       let userData = res.data.user;
-      if (!userData) {
+      if (!isValidUser(userData)) {
         try {
           const userRes = await api.get('/auth/me/');
-          userData = userRes.data;
+          if (isValidUser(userRes.data)) userData = userRes.data;
         } catch {
           // Ignore
         }
       }
-      if (!userData) {
-        const role = username.includes('hr') ? 'HR' : username.includes('mentor') ? 'MENTOR' : 'INTERN';
-        userData = { username, role, full_name: username.toUpperCase() };
+      if (!isValidUser(userData)) {
+        const mockRes = await handleMockRequest('/auth/login', 'post', { username, password });
+        userData = mockRes.user;
       }
       setUser(userData);
       localStorage.setItem('portal_user', JSON.stringify(userData));

@@ -10,7 +10,7 @@ const Sidebar = ({ isOpen, onClose }) => {
   const { user } = useAuth();
   if (!user) return null;
 
-  const role = user.role;
+  const role = user.role || (window.location.pathname.startsWith('/admin') ? 'ADMIN' : window.location.pathname.startsWith('/mentor') ? 'MENTOR' : window.location.pathname.startsWith('/intern') ? 'INTERN' : 'HR');
 
   const hrLinks = [
     { to: '/hr/dashboard', label: 'HR Dashboard', icon: LayoutDashboard },
@@ -118,7 +118,7 @@ const Sidebar = ({ isOpen, onClose }) => {
                 {user.full_name || user.username}
               </p>
               <p className="text-[11px] text-gray-400 capitalize">
-                Role: {(user.role || '').toLowerCase()}
+                Role: {role.toLowerCase()}
               </p>
             </div>
           </div>

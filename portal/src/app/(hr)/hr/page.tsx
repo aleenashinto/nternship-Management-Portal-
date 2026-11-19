@@ -1,13 +1,18 @@
 import { requireRole } from "@/lib/rbac/guard";
 import { getHrDashboardData } from "@/services/dashboard";
+import { listMentorsForHr } from "@/services/user";
 import { SimpleBarChart } from "@/components/charts/dashboard-charts";
 import { CertificatesTableClient } from "./certificates/certificates-table-client";
+import { HRMentorsManager } from "./mentors/hr-mentors-manager";
 
 export const dynamic = "force-dynamic";
 
 export default async function HRDashboardPage() {
-  await requireRole("HR");
-  const { kpis, mentorDistribution, pendingCertRequests } = await getHrDashboardData();
+  const actor = await requireRole("HR");
+  const [{ kpis, mentorDistribution, pendingCertRequests }, mentors] = await Promise.all([
+    getHrDashboardData(),
+    listMentorsForHr(actor),
+  ]);
 
   const cards = [
     { label: "Total Interns", value: kpis.totalInterns },
@@ -47,6 +52,11 @@ export default async function HRDashboardPage() {
           xKey="name"
           bars={[{ key: "interns", label: "Assigned Interns", color: "#4B3A9B" }]}
         />
+      </div>
+
+      {/* Mentors Table & Add Mentor Section directly on HR Dashboard */}
+      <div className="rounded-2xl border border-gray-100 bg-white p-6">
+        <HRMentorsManager initial={JSON.parse(JSON.stringify(mentors))} />
       </div>
 
       {/* Dedicated Certification Section */}

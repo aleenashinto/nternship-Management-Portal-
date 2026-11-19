@@ -275,6 +275,93 @@ const HRDashboard = () => {
         </div>
       </div>
 
+      {/* Added Mentors Table directly on HR Dashboard */}
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-xs overflow-hidden">
+        <div className="p-6 border-b border-gray-100 flex items-center justify-between">
+          <div className="flex items-center space-x-3">
+            <div className="p-2 rounded-xl bg-blue-50 text-blue-600">
+              <UserCheck className="w-5 h-5" />
+            </div>
+            <div>
+              <h2 className="text-lg font-bold text-gray-900">Mentors Directory</h2>
+              <p className="text-xs text-gray-500 mt-0.5">All registered Team Leads/Mentors, contact details, shift hours, and assigned intern counts</p>
+            </div>
+          </div>
+          <div className="flex items-center space-x-3">
+            <button
+              onClick={() => setIsMentorModalOpen(true)}
+              className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-blue-600 text-white hover:bg-blue-700"
+            >
+              <PlusCircle className="w-3.5 h-3.5" />
+              <span>+ Add Mentor</span>
+            </button>
+            <Link
+              to="/hr/mentors"
+              className="text-xs font-semibold text-blue-600 hover:text-blue-700 flex items-center"
+            >
+              <span>Manage Mentors (Edit / Delete)</span>
+              <ArrowRight className="w-3.5 h-3.5 ml-1" />
+            </Link>
+          </div>
+        </div>
+
+        <div className="overflow-x-auto">
+          {mentorsList.length === 0 ? (
+            <div className="py-10 text-center text-sm text-gray-400">
+              No mentors added yet. Click "Create Mentor" to add a mentor.
+            </div>
+          ) : (
+            <table className="w-full text-left text-sm">
+              <thead className="bg-slate-50 text-gray-500 text-xs font-semibold uppercase tracking-wider border-b border-gray-100">
+                <tr>
+                  <th className="px-6 py-3.5">Mentor Name</th>
+                  <th className="px-6 py-3.5">Username</th>
+                  <th className="px-6 py-3.5">Email</th>
+                  <th className="px-6 py-3.5">Phone</th>
+                  <th className="px-6 py-3.5">Shift Hours</th>
+                  <th className="px-6 py-3.5">Assigned Interns</th>
+                  <th className="px-6 py-3.5 text-right">Manage</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {mentorsList.map((m) => (
+                  <tr key={m.id} className="hover:bg-slate-50/70 transition-colors">
+                    <td className="px-6 py-4 font-semibold text-gray-900">
+                      {m.full_name || m.username}
+                    </td>
+                    <td className="px-6 py-4 text-xs font-mono text-gray-500">
+                      @{m.username}
+                    </td>
+                    <td className="px-6 py-4 text-xs text-gray-600">
+                      {m.email}
+                    </td>
+                    <td className="px-6 py-4 text-xs text-gray-600">
+                      {m.phone || 'N/A'}
+                    </td>
+                    <td className="px-6 py-4 text-xs text-gray-600">
+                      {m.work_start_time || '09:00'} – {m.work_end_time || '17:30'}
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-50 text-blue-700">
+                        {m.assigned_intern_count ?? 0} Assigned
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 text-right">
+                      <Link
+                        to="/hr/mentors"
+                        className="text-xs font-semibold text-blue-600 hover:underline"
+                      >
+                        View / Edit / Delete →
+                      </Link>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+
       {/* Dedicated Certification Section (Section 2.2 requirement) */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-xs overflow-hidden">
         <div className="p-6 border-b border-gray-100 flex items-center justify-between">
