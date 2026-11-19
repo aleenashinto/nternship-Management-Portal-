@@ -1,7 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import api from '../../api/client';
 import Modal from '../../components/Modal';
-import { Users, UserPlus, UserCheck, Phone, Mail, MapPin, GraduationCap, ArrowRightLeft, Search } from 'lucide-react';
+import {
+  Users, UserPlus, UserCheck, Phone, Mail, MapPin,
+  GraduationCap, ArrowRightLeft, Search, Eye, Pencil, Trash2
+} from 'lucide-react';
+
+const emptyInternForm = {
+  username: '', password: '', first_name: '', last_name: '',
+  email: '', phone: '', phone2: '', address: '',
+  education_qualification: '', source: 'Direct', assigned_mentor: ''
+};
 
 const InternsList = () => {
   const [interns, setInterns] = useState([]);
@@ -9,13 +18,16 @@ const InternsList = () => {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
 
-  // Register Modal
-  const [isRegisterOpen, setIsRegisterOpen] = useState(false);
-  const [internForm, setInternForm] = useState({
-    username: '', password: '', first_name: '', last_name: '',
-    email: '', phone: '', phone2: '', address: '',
-    education_qualification: '', source: 'Direct', assigned_mentor: ''
-  });
+  // Add / Edit Modal
+  const [isFormOpen, setIsFormOpen] = useState(false);
+  const [editingIntern, setEditingIntern] = useState(null);
+  const [internForm, setInternForm] = useState(emptyInternForm);
+
+  // View Modal
+  const [viewingIntern, setViewingIntern] = useState(null);
+
+  // Delete Confirmation Modal
+  const [deletingIntern, setDeletingIntern] = useState(null);
 
   // Assign Mentor Modal
   const [assigningIntern, setAssigningIntern] = useState(null);
@@ -41,21 +53,59 @@ const InternsList = () => {
     fetchData();
   }, []);
 
-  const handleRegister = async (e) => {
+  const openAddModal = () => {
+    setEditingIntern(null);
+    setInternForm(emptyInternForm);
+    setIsFormOpen(true);
+  };
+
+  const openEditModal = (intern) => {
+    setEditingIntern(intern);
+    const parts = (intern.full_name || '').split(' ');
+    setInternForm({
+      username: intern.username || '',
+      password: '',
+      first_name: intern.first_name || parts[0] || '',
+      last_name: intern.last_name || parts.slice(1).join(' ') || '',
+      email: intern.email || '',
+      phone: intern.phone || '',
+      phone2: intern.phone2 || '',
+      address: intern.address || '',
+      education_qualification: intern.education_qualification || '',
+      source: intern.source || 'Direct',
+      assigned_mentor: intern.assigned_mentor ? String(intern.assigned_mentor) : ''
+    });
+    setIsFormOpen(true);
+  };
+
+  const handleSave = async (e) => {
     e.preventDefault();
     try {
       const payload = { ...internForm };
-      if (!payload.assigned_mentor) delete payload.assigned_mentor;
-      await api.post('/hr/interns/', payload);
-      setIsRegisterOpen(false);
-      setInternForm({
-        username: '', password: '', first_name: '', last_name: '',
-        email: '', phone: '', phone2: '', address: '',
-        education_qualification: '', source: 'Direct', assigned_mentor: ''
-      });
+      if (!payload.password) delete payload.password;
+      if (editingIntern) {
+        await api.patch(`/hr/interns/${editingIntern.id}/`, payload);
+      } else {
+        if (!payload.assigned_mentor) delete payload.assigned_mentor;
+        await api.post('/hr/interns/', payload);
+      }
+      setIsFormOpen(false);
+      setEditingIntern(null);
+      setInternForm(emptyInternForm);
       fetchData();
     } catch (err) {
-      alert(err.response?.data?.username?.[0] || 'Error registering intern.');
+      alert(err.response?.data?.username?.[0] || 'Error saving intern.');
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!deletingIntern) return;
+    try {
+      await api.delete(`/hr/interns/${deletingIntern.id}/`);
+      setDeletingIntern(null);
+      fetchData();
+    } catch (err) {
+      alert('Error deleting intern.');
     }
   };
 
@@ -88,15 +138,15 @@ const InternsList = () => {
         <div>
           <h1 className="text-xl font-bold text-gray-900">Intern Directory & Mentorship Assignment</h1>
           <p className="text-xs text-gray-500 mt-1">
-            Register new interns, track academic qualifications, and assign or reassign dedicated mentors.
+            Add, view, edit, and delete interns, track academic qualifications, and assign or reassign dedicated mentors.
           </p>
         </div>
         <button
-          onClick={() => setIsRegisterOpen(true)}
+          onClick={openAddModal}
           className="inline-flex items-center space-x-2 px-4 py-2.5 rounded-xl text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 transition-colors shadow-sm shadow-blue-500/20"
         >
           <UserPlus className="w-4 h-4" />
-          <span>Register New Intern</span>
+          <span>Add Intern</span>
         </button>
       </div>
 
@@ -186,16 +236,43 @@ const InternsList = () => {
                     </td>
 
                     <td className="px-6 py-4 text-right">
-                      <button
-                        onClick={() => {
-                          setAssigningIntern(intern);
-                          setSelectedMentorId(intern.assigned_mentor ? String(intern.assigned_mentor) : '');
-                        }}
-                        className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-100 hover:bg-blue-50 hover:text-blue-700 text-gray-700 transition-colors"
-                      >
-                        <ArrowRightLeft className="w-3.5 h-3.5" />
-                        <span>{intern.assigned_mentor ? 'Reassign Mentor' : 'Assign Mentor'}</span>
-                      </button>
+                      <div className="inline-flex flex-wrap items-center justify-end gap-1.5">
+                        <button
+                          onClick={() => setViewingIntern(intern)}
+                          className="inline-flex items-center space-x-1 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-slate-100 hover:bg-slate-200 text-gray-700 transition-colors"
+                          title="View Intern Profile"
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                          <span>View</span>
+                        </button>
+                        <button
+                          onClick={() => openEditModal(intern)}
+                          className="inline-flex items-center space-x-1 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-blue-50 hover:bg-blue-100 text-blue-700 transition-colors"
+                          title="Edit Intern"
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                          <span>Edit</span>
+                        </button>
+                        <button
+                          onClick={() => {
+                            setAssigningIntern(intern);
+                            setSelectedMentorId(intern.assigned_mentor ? String(intern.assigned_mentor) : '');
+                          }}
+                          className="inline-flex items-center space-x-1 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-slate-100 hover:bg-blue-50 hover:text-blue-700 text-gray-700 transition-colors"
+                          title="Assign or Reassign Mentor"
+                        >
+                          <ArrowRightLeft className="w-3.5 h-3.5" />
+                          <span>{intern.assigned_mentor ? 'Reassign' : 'Assign'}</span>
+                        </button>
+                        <button
+                          onClick={() => setDeletingIntern(intern)}
+                          className="inline-flex items-center space-x-1 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-rose-50 hover:bg-rose-100 text-rose-700 transition-colors"
+                          title="Delete Intern"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>Delete</span>
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -205,14 +282,14 @@ const InternsList = () => {
         )}
       </div>
 
-      {/* Modal: Register Intern */}
+      {/* Modal: Add / Edit Intern */}
       <Modal
-        isOpen={isRegisterOpen}
-        onClose={() => setIsRegisterOpen(false)}
-        title="Register New Intern"
+        isOpen={isFormOpen}
+        onClose={() => setIsFormOpen(false)}
+        title={editingIntern ? `Edit Intern: ${editingIntern.full_name || editingIntern.username}` : 'Register New Intern'}
         maxWidth="max-w-xl"
       >
-        <form onSubmit={handleRegister} className="space-y-4">
+        <form onSubmit={handleSave} className="space-y-4">
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-semibold text-gray-700 mb-1">Username *</label>
@@ -226,13 +303,15 @@ const InternsList = () => {
               />
             </div>
             <div>
-              <label className="block text-xs font-semibold text-gray-700 mb-1">Password (Optional)</label>
+              <label className="block text-xs font-semibold text-gray-700 mb-1">
+                {editingIntern ? 'New Password (Optional)' : 'Password (Optional)'}
+              </label>
               <input
                 type="password"
                 value={internForm.password}
                 onChange={e => setInternForm({ ...internForm, password: e.target.value })}
                 className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm"
-                placeholder="Default: InternPassword@123"
+                placeholder={editingIntern ? 'Leave blank to keep current' : 'Default: InternPassword@123'}
               />
             </div>
           </div>
@@ -347,7 +426,7 @@ const InternsList = () => {
           <div className="pt-2 flex justify-end space-x-2">
             <button
               type="button"
-              onClick={() => setIsRegisterOpen(false)}
+              onClick={() => setIsFormOpen(false)}
               className="px-4 py-2 border border-gray-200 rounded-xl text-sm text-gray-600 hover:bg-gray-50"
             >
               Cancel
@@ -356,10 +435,95 @@ const InternsList = () => {
               type="submit"
               className="px-4 py-2 bg-blue-600 text-white rounded-xl text-sm font-medium hover:bg-blue-700"
             >
-              Register Intern
+              {editingIntern ? 'Update Intern' : 'Register Intern'}
             </button>
           </div>
         </form>
+      </Modal>
+
+      {/* Modal: View Intern Details */}
+      <Modal
+        isOpen={!!viewingIntern}
+        onClose={() => setViewingIntern(null)}
+        title="Intern Profile Details"
+      >
+        {viewingIntern && (
+          <div className="space-y-4 text-sm">
+            <div className="p-4 rounded-xl bg-blue-50/60 border border-blue-100 space-y-1.5">
+              <div className="text-base font-bold text-gray-900">{viewingIntern.full_name || viewingIntern.username}</div>
+              <div className="text-xs text-gray-500 font-mono">@{viewingIntern.username}</div>
+              <div className="text-xs text-gray-700 pt-1">
+                <b>Email:</b> {viewingIntern.email}
+              </div>
+              <div className="text-xs text-gray-700">
+                <b>Primary Phone:</b> {viewingIntern.phone} {viewingIntern.phone2 ? `· Secondary: ${viewingIntern.phone2}` : ''}
+              </div>
+              <div className="text-xs text-gray-700">
+                <b>Address:</b> {viewingIntern.address || 'N/A'}
+              </div>
+              <div className="text-xs text-gray-700">
+                <b>Qualification:</b> {viewingIntern.education_qualification || 'N/A'} · <b>Source:</b> {viewingIntern.source || 'Direct'}
+              </div>
+              <div className="text-xs text-gray-700">
+                <b>Assigned Mentor:</b>{' '}
+                {viewingIntern.assigned_mentor_name ? (
+                  <span className="font-semibold text-emerald-700">{viewingIntern.assigned_mentor_name}</span>
+                ) : (
+                  <span className="font-semibold text-amber-700">Unassigned</span>
+                )}
+              </div>
+            </div>
+
+            <div className="flex justify-end space-x-2 pt-2">
+              <button
+                onClick={() => {
+                  const target = viewingIntern;
+                  setViewingIntern(null);
+                  openEditModal(target);
+                }}
+                className="px-4 py-2 bg-blue-50 text-blue-700 rounded-xl text-xs font-semibold hover:bg-blue-100"
+              >
+                Edit Intern
+              </button>
+              <button
+                onClick={() => setViewingIntern(null)}
+                className="px-4 py-2 bg-blue-600 text-white rounded-xl text-xs font-semibold hover:bg-blue-700"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* Modal: Delete Confirmation */}
+      <Modal
+        isOpen={!!deletingIntern}
+        onClose={() => setDeletingIntern(null)}
+        title="Delete Intern Profile?"
+      >
+        {deletingIntern && (
+          <div className="space-y-4">
+            <p className="text-sm text-gray-600">
+              Are you sure you want to delete intern{' '}
+              <b className="text-gray-900">{deletingIntern.full_name || deletingIntern.username}</b>? This removes their profile and login access from the portal.
+            </p>
+            <div className="flex justify-end space-x-2">
+              <button
+                onClick={() => setDeletingIntern(null)}
+                className="px-4 py-2 border border-gray-200 rounded-xl text-sm text-gray-600 hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDelete}
+                className="px-4 py-2 bg-rose-600 text-white rounded-xl text-sm font-medium hover:bg-rose-700"
+              >
+                Confirm Delete
+              </button>
+            </div>
+          </div>
+        )}
       </Modal>
 
       {/* Modal: Assign / Reassign Mentor */}

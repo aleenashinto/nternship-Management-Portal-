@@ -6,7 +6,7 @@ import { dispatchEvent } from "@/lib/events/dispatcher";
 import { HttpError, internScope, type Actor } from "@/lib/rbac/guard";
 import { generatePassword } from "@/services/user";
 import type { z } from "zod";
-import type { registerInternSchema } from "@/lib/validation/interns";
+import type { registerInternSchema, updateInternSchema } from "@/lib/validation/interns";
 
 export async function listInterns(actor: Actor) {
   const scope = await internScope(actor);
@@ -183,4 +183,77 @@ export async function listActiveMentorsForAssignment(actor: Actor) {
     workEndTime: m.workEndTime,
     assignedInternCount: m._count.interns,
   }));
+}
+
+export async function updateInternByHr(
+  actor: Actor,
+  internId: string,
+  input: z.infer<typeof updateInternSchema>,
+) {
+  if (actor.role !== "HR" && actor.role !== "ADMIN") {
+    throw new HttpError(403, "Only HR Manager or Admin can edit interns");
+  }
+  const intern = await prisma.internProfile.findUnique({ where: { id: internId } });
+  if (!intern) throw new HttpError(404, "Intern not found");
+
+  const nextMentorId =
+    input.mentorId === undefined ? undefined : input.mentorId ? input.mentorId : null;
+
+  await prisma.$transaction(async (tx) => {
+    if (input.email) {
+      await tx.user.update({
+        where: { id: intern.userId },
+        data: { email: input.email, username: input.email },
+      });
+    }
+    await tx.internProfile.update({
+      where: { id: internId },
+      data: {
+        name: input.name,
+        email: input.email,
+        phone1: input.phone1,
+        phone2: input.phone2 === undefined ? undefined : input.phone2 || null,
+        address: input.address,
+        educationalQualification: input.educationalQualification,
+        source: input.source,
+        mentorId: nextMentorId,
+      },
+    });
+    await logActivity(actor.userId, "INTERN_UPDATED", "InternProfile", internId, {
+      fields: Object.keys(input),
+    }, tx);
+  });
+}
+
+export async function deleteInternByHr(actor: Actor, internId: string) {
+  if (actor.role !== "HR" && actor.role !== "ADMIN") {
+    throw new HttpError(403, "Only HR Manager or Admin can delete interns");
+  }
+  const intern = await prisma.internProfile.findUnique({
+    where: { id: internId },
+    include: { internship: { include: { certificateRequest: true } }, assignments: true },
+  });
+  if (!intern) throw new HttpError(404, "Intern not found");
+
+  await prisma.$transaction(async (tx) => {
+    if (intern.internship?.certificateRequest) {
+      await tx.certificate.deleteMany({ where: { requestId: intern.internship.certificateRequest.id } });
+      await tx.certificateRequest.delete({ where: { id: intern.internship.certificateRequest.id } });
+    }
+    if (intern.internship) {
+      await tx.internship.delete({ where: { id: intern.internship.id } });
+    }
+    const aIds = intern.assignments.map((a) => a.id);
+    if (aIds.length > 0) {
+      await tx.evaluation.deleteMany({ where: { assignmentId: { in: aIds } } });
+      await tx.correctionRequest.deleteMany({ where: { assignmentId: { in: aIds } } });
+      await tx.extensionRequest.deleteMany({ where: { assignmentId: { in: aIds } } });
+      await tx.submission.deleteMany({ where: { assignmentId: { in: aIds } } });
+    }
+    await tx.presentation.deleteMany({ where: { internId } });
+    await tx.projectAssignment.deleteMany({ where: { internId } });
+    await tx.mentorNote.deleteMany({ where: { internId } });
+    await tx.user.delete({ where: { id: intern.userId } });
+    await logActivity(actor.userId, "INTERN_DELETED", "InternProfile", internId, undefined, tx);
+  });
 }

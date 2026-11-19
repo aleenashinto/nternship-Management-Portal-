@@ -442,13 +442,18 @@ export const handleMockRequest = async (url, method = 'get', data = null) => {
     }
   }
 
-  // 5. HR Interns
+  // 5. HR Interns (Add, View, Edit, Delete)
   if (cleanUrl === '/hr/interns') {
+    const current = getStore('interns', Object.values(INITIAL_USERS).filter(u => u.role === 'INTERN'));
     if (method.toLowerCase() === 'post') {
-      const current = getStore('interns', Object.values(INITIAL_USERS).filter(u => u.role === 'INTERN'));
+      const mentors = getStore('mentors', Object.values(INITIAL_USERS).filter(u => u.role === 'MENTOR'));
+      const mId = parsedData.assigned_mentor ? parseInt(parsedData.assigned_mentor) : null;
+      const mObj = mentors.find(m => m.id === mId);
       const newI = {
         id: Date.now(),
         ...parsedData,
+        assigned_mentor: mId,
+        assigned_mentor_name: mObj ? (mObj.full_name || mObj.username) : null,
         full_name: `${parsedData.first_name || ''} ${parsedData.last_name || ''}`.trim() || parsedData.username,
         role: 'INTERN',
         is_active_intern: true,
@@ -457,7 +462,7 @@ export const handleMockRequest = async (url, method = 'get', data = null) => {
       setStore('interns', current);
       return newI;
     }
-    return getStore('interns', Object.values(INITIAL_USERS).filter(u => u.role === 'INTERN'));
+    return current;
   }
 
   // 6. Assign Mentor
@@ -469,9 +474,42 @@ export const handleMockRequest = async (url, method = 'get', data = null) => {
       target.assigned_mentor = parsedData.mentor_id;
       const mentors = getStore('mentors', Object.values(INITIAL_USERS).filter(u => u.role === 'MENTOR'));
       const m = mentors.find(m => m.id === parsedData.mentor_id);
-      target.assigned_mentor_name = m ? m.full_name : null;
+      target.assigned_mentor_name = m ? (m.full_name || m.username) : null;
       setStore('interns', current);
       return target;
+    }
+  }
+
+  // 6b. View, Edit (PATCH/PUT), Delete individual Intern
+  if (cleanUrl.match(/^\/hr\/interns\/\d+$/)) {
+    const internId = parseInt(cleanUrl.split('/')[3]);
+    const current = getStore('interns', Object.values(INITIAL_USERS).filter(u => u.role === 'INTERN'));
+    if (method.toLowerCase() === 'get') {
+      return current.find(i => i.id === internId) || current[0];
+    }
+    if (method.toLowerCase() === 'patch' || method.toLowerCase() === 'put') {
+      const target = current.find(i => i.id === internId);
+      if (target) {
+        const mentors = getStore('mentors', Object.values(INITIAL_USERS).filter(u => u.role === 'MENTOR'));
+        Object.assign(target, parsedData);
+        target.full_name = `${target.first_name || ''} ${target.last_name || ''}`.trim() || target.username;
+        if ('assigned_mentor' in parsedData) {
+          const mId = parsedData.assigned_mentor ? parseInt(parsedData.assigned_mentor) : null;
+          target.assigned_mentor = mId;
+          const mObj = mentors.find(m => m.id === mId);
+          target.assigned_mentor_name = mObj ? (mObj.full_name || mObj.username) : null;
+        }
+        setStore('interns', current);
+      }
+      return target || { status: 'updated' };
+    }
+    if (method.toLowerCase() === 'delete') {
+      const filtered = current.filter(i => i.id !== internId);
+      setStore('interns', filtered);
+      // Clean up related assignments in demo store
+      const assignments = getStore('assignments', INITIAL_ASSIGNMENTS).filter(a => a.intern !== internId);
+      setStore('assignments', assignments);
+      return { status: 'deleted' };
     }
   }
 
