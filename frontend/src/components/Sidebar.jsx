@@ -35,12 +35,22 @@ const Sidebar = ({ isOpen, onClose }) => {
     { to: '/intern/certificate', label: 'My Certificate', icon: Award },
   ];
 
+  const adminLinks = [
+    { to: '/admin/dashboard', label: 'Admin Dashboard', icon: LayoutDashboard },
+    { to: '/admin/staff', label: 'HR & Mentor Accounts', icon: UserCheck },
+    { to: '/admin/grants', label: 'Cross-Mentor Grants', icon: Users },
+    { to: '/admin/template', label: 'Certificate Template', icon: FileText },
+    { to: '/admin/logs', label: 'Activity Audit Logs', icon: Clock },
+  ];
+
   const getLinks = () => {
     if (role === 'HR') return hrLinks;
     if (role === 'MENTOR') return mentorLinks;
     if (role === 'INTERN') return internLinks;
     if (role === 'ADMIN') {
       return [
+        { header: 'Admin Module' },
+        ...adminLinks,
         { header: 'HR Module' },
         ...hrLinks,
         { header: 'Mentor Module' },

@@ -310,8 +310,17 @@ export const handleMockRequest = async (url, method = 'get', data = null) => {
     const rawUser = parsedData?.username || '';
     const trimmedUser = rawUser.trim().toLowerCase();
 
-    // Check predefined users first
-    const u = INITIAL_USERS[trimmedUser];
+    // Check predefined users first (also accept @beat.local seeded usernames)
+    const beatAlias = {
+      'admin@beat.local': 'admin',
+      'hr@beat.local': 'hr_manager',
+      'mentor1@beat.local': 'lead_mentor',
+      'mentor2@beat.local': 'lead_mentor',
+      'intern1@beat.local': 'intern_emma',
+      'intern2@beat.local': 'intern_john',
+      'intern3@beat.local': 'intern_alex',
+    };
+    const u = INITIAL_USERS[beatAlias[trimmedUser] || trimmedUser];
     if (u) {
       localStorage.setItem('portal_user', JSON.stringify(u));
       return {
@@ -695,6 +704,160 @@ export const handleMockRequest = async (url, method = 'get', data = null) => {
     const target = notifs.find(n => n.id === notifId);
     if (target) { target.is_read = true; setStore('notifications', notifs); }
     return { status: 'marked as read' };
+  }
+
+  // 16. Admin Dashboard
+  if (cleanUrl === '/admin/dashboard') {
+    const mentors = getStore('mentors', Object.values(INITIAL_USERS).filter(u => u.role === 'MENTOR'));
+    const interns = getStore('interns', Object.values(INITIAL_USERS).filter(u => u.role === 'INTERN'));
+    const projects = getStore('projects', INITIAL_PROJECTS);
+    const assignments = getStore('assignments', INITIAL_ASSIGNMENTS);
+    const certs = getStore('certificates', INITIAL_CERTIFICATES);
+
+    return {
+      kpis: {
+        total_hr: 1,
+        total_mentors: mentors.length,
+        total_interns: interns.length,
+        active_internships: interns.filter(i => i.is_active_intern).length,
+        completed_internships: certs.filter(c => c.status === 'APPROVED').length + 1,
+        total_projects: projects.length,
+        total_assignments: assignments.length,
+        completed_assignments: assignments.filter(a => a.status === 'COMPLETED').length,
+        pending_certificates: certs.filter(c => c.status === 'PENDING').length,
+        avg_score: 94.5,
+      },
+      status_breakdown: [
+        { name: 'Completed', value: assignments.filter(a => a.status === 'COMPLETED').length },
+        { name: 'Submitted / Review', value: assignments.filter(a => ['SUBMITTED', 'UNDER_REVIEW', 'RESUBMITTED'].includes(a.status)).length },
+        { name: 'In Progress / Assigned', value: assignments.filter(a => ['ASSIGNED', 'IN_PROGRESS'].includes(a.status)).length },
+        { name: 'Revision Required', value: assignments.filter(a => a.status === 'REVISION_REQUIRED').length },
+        { name: 'Overdue', value: assignments.filter(a => a.status === 'OVERDUE').length },
+      ],
+    };
+  }
+
+  // 17. Admin Staff (HR & Mentors)
+  if (cleanUrl === '/admin/staff') {
+    const defaultStaff = [
+      INITIAL_USERS.hr_manager,
+      INITIAL_USERS.lead_mentor,
+      {
+        id: 302,
+        username: 'noah_mentor',
+        email: 'noah.mentor@portal.example.com',
+        first_name: 'Noah',
+        last_name: 'Mentor',
+        full_name: 'Noah Mentor',
+        role: 'MENTOR',
+        phone: '+91 90000 00002',
+        work_start_time: '10:00',
+        work_end_time: '18:30',
+        assigned_intern_count: 1,
+        is_active: true,
+      },
+    ];
+    if (method.toLowerCase() === 'post') {
+      const staff = getStore('admin_staff', defaultStaff);
+      const newStaff = {
+        id: Date.now(),
+        ...parsedData,
+        username: parsedData.email,
+        full_name: parsedData.name,
+        assigned_intern_count: 0,
+        is_active: true,
+      };
+      staff.unshift(newStaff);
+      setStore('admin_staff', staff);
+      const logs = getStore('activity_logs', []);
+      logs.unshift({
+        id: Date.now(),
+        actor: activeUser?.username || 'admin',
+        role: 'ADMIN',
+        action: 'USER_CREATED',
+        entity: `User (${parsedData.role})`,
+        metadata: parsedData.email,
+        created_at: new Date().toISOString(),
+      });
+      setStore('activity_logs', logs);
+      return { ...newStaff, temp_password: `Beat#${Math.random().toString(36).slice(2, 8)}A1` };
+    }
+    if (method.toLowerCase() === 'patch') {
+      const staff = getStore('admin_staff', defaultStaff);
+      const target = staff.find(s => s.id === parsedData.id);
+      if (target) {
+        Object.assign(target, parsedData);
+        if (parsedData.name) target.full_name = parsedData.name;
+        setStore('admin_staff', staff);
+      }
+      return target || { status: 'updated' };
+    }
+    return getStore('admin_staff', defaultStaff);
+  }
+
+  // 18. Admin Cross-Mentor Access Grants
+  if (cleanUrl === '/admin/grants') {
+    const defaultGrants = [
+      {
+        id: 1,
+        owner_id: 3,
+        owner_name: 'David Miller (mentor@portal.example.com)',
+        grantee_id: 302,
+        grantee_name: 'Noah Mentor (noah.mentor@portal.example.com)',
+        created_at: new Date(Date.now() - 86400000).toISOString(),
+      },
+    ];
+    if (method.toLowerCase() === 'post') {
+      const grants = getStore('admin_grants', defaultGrants);
+      const g = {
+        id: Date.now(),
+        owner_id: parsedData.owner_id,
+        owner_name: parsedData.owner_name,
+        grantee_id: parsedData.grantee_id,
+        grantee_name: parsedData.grantee_name,
+        created_at: new Date().toISOString(),
+      };
+      grants.unshift(g);
+      setStore('admin_grants', grants);
+      return g;
+    }
+    if (method.toLowerCase() === 'delete') {
+      const grants = getStore('admin_grants', defaultGrants).filter(g => g.id !== parsedData.id);
+      setStore('admin_grants', grants);
+      return { status: 'revoked' };
+    }
+    return getStore('admin_grants', defaultGrants);
+  }
+
+  // 19. Admin Certificate Template
+  if (cleanUrl === '/admin/template') {
+    const defaultTpl = {
+      organisation: 'Beat Education',
+      programTitle: 'Data Analytics Internship Program',
+      bodyText: 'has successfully completed the internship program',
+      signatoryName: 'Authorised Signatory',
+      signatoryTitle: 'Program Director',
+      accentColor: '#4B3A9B',
+    };
+    if (method.toLowerCase() === 'put' || method.toLowerCase() === 'post') {
+      setStore('cert_template', parsedData);
+      return parsedData;
+    }
+    return getStore('cert_template', defaultTpl);
+  }
+
+  // 20. Admin Activity Logs
+  if (cleanUrl === '/admin/logs') {
+    const defaultLogs = [
+      { id: 1, actor: 'admin', role: 'ADMIN', action: 'DATABASE_SEEDED', entity: 'System', metadata: '5 interns, 2 mentors, 2 projects', created_at: new Date(Date.now() - 7200000).toISOString() },
+      { id: 2, actor: 'hr_manager', role: 'HR', action: 'INTERN_REGISTERED', entity: 'InternProfile #4', metadata: 'emma.watson@example.com', created_at: new Date(Date.now() - 5400000).toISOString() },
+      { id: 3, actor: 'hr_manager', role: 'HR', action: 'MENTOR_ASSIGNED', entity: 'InternProfile #4', metadata: 'Assigned to David Miller', created_at: new Date(Date.now() - 5000000).toISOString() },
+      { id: 4, actor: 'lead_mentor', role: 'MENTOR', action: 'PROJECT_ASSIGNED', entity: 'ProjectAssignment #101', metadata: 'Financial Portfolio Risk & Monte Carlo Stress Testing', created_at: new Date(Date.now() - 3600000).toISOString() },
+      { id: 5, actor: 'intern_emma', role: 'INTERN', action: 'PROJECT_SUBMITTED', entity: 'Submission v1', metadata: 'Assignment #101', created_at: new Date(Date.now() - 2400000).toISOString() },
+      { id: 6, actor: 'lead_mentor', role: 'MENTOR', action: 'ASSIGNMENT_EVALUATED_COMPLETED', entity: 'Evaluation #1', metadata: 'Score: 94.5/100', created_at: new Date(Date.now() - 1800000).toISOString() },
+      { id: 7, actor: 'lead_mentor', role: 'MENTOR', action: 'INTERNSHIP_COMPLETED', entity: 'Internship #1', metadata: 'CertificateRequest generated (PENDING)', created_at: new Date(Date.now() - 1200000).toISOString() },
+    ];
+    return getStore('activity_logs', defaultLogs);
   }
 
   return { status: 'ok' };

@@ -17,10 +17,11 @@ const Login = () => {
     setIsSubmitting(true);
     try {
       const userData = await login(username, password);
-      if (userData.role === 'HR') navigate('/hr/dashboard');
+      if (userData.role === 'ADMIN') navigate('/admin/dashboard');
+      else if (userData.role === 'HR') navigate('/hr/dashboard');
       else if (userData.role === 'MENTOR') navigate('/mentor/dashboard');
       else if (userData.role === 'INTERN') navigate('/intern/dashboard');
-      else navigate('/hr/dashboard'); // Admin default
+      else navigate('/hr/dashboard');
     } catch (err) {
       setError(err.response?.data?.detail || 'Invalid username or password. Please try again.');
     } finally {

@@ -28,6 +28,13 @@ import InternProjects from './pages/intern/InternProjects';
 import InternPresentations from './pages/intern/InternPresentations';
 import InternCertificate from './pages/intern/InternCertificate';
 
+// Admin Pages
+import AdminDashboard from './pages/admin/AdminDashboard';
+import AdminStaff from './pages/admin/AdminStaff';
+import AdminGrants from './pages/admin/AdminGrants';
+import AdminTemplate from './pages/admin/AdminTemplate';
+import AdminLogs from './pages/admin/AdminLogs';
+
 const DashboardLayout = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
@@ -50,6 +57,7 @@ const RootRedirect = () => {
   const { user, loading } = useAuth();
   if (loading) return null;
   if (!user) return <Navigate to="/login" replace />;
+  if (user.role === 'ADMIN') return <Navigate to="/admin/dashboard" replace />;
   if (user.role === 'HR') return <Navigate to="/hr/dashboard" replace />;
   if (user.role === 'MENTOR') return <Navigate to="/mentor/dashboard" replace />;
   if (user.role === 'INTERN') return <Navigate to="/intern/dashboard" replace />;
@@ -67,13 +75,24 @@ function App() {
           {/* Authenticated Dashboard Routes */}
           <Route element={<ProtectedRoute />}>
             <Route element={<DashboardLayout />}>
+              {/* Admin Module */}
+              <Route path="/admin" element={<AdminDashboard />} />
+              <Route path="/admin/dashboard" element={<AdminDashboard />} />
+              <Route path="/admin/staff" element={<AdminStaff />} />
+              <Route path="/admin/users" element={<AdminStaff />} />
+              <Route path="/admin/grants" element={<AdminGrants />} />
+              <Route path="/admin/template" element={<AdminTemplate />} />
+              <Route path="/admin/logs" element={<AdminLogs />} />
+
               {/* HR Module */}
+              <Route path="/hr" element={<HRDashboard />} />
               <Route path="/hr/dashboard" element={<HRDashboard />} />
               <Route path="/hr/mentors" element={<MentorsList />} />
               <Route path="/hr/interns" element={<InternsList />} />
               <Route path="/hr/certificates" element={<CertificatesList />} />
 
               {/* Mentor Module */}
+              <Route path="/mentor" element={<MentorDashboard />} />
               <Route path="/mentor/dashboard" element={<MentorDashboard />} />
               <Route path="/mentor/projects" element={<MentorProjects />} />
               <Route path="/mentor/interns" element={<MentorInterns />} />
@@ -82,8 +101,10 @@ function App() {
               <Route path="/mentor/presentations" element={<MentorPresentations />} />
 
               {/* Intern Module */}
+              <Route path="/intern" element={<InternDashboard />} />
               <Route path="/intern/dashboard" element={<InternDashboard />} />
               <Route path="/intern/projects" element={<InternProjects />} />
+              <Route path="/intern/assignments" element={<InternProjects />} />
               <Route path="/intern/presentations" element={<InternPresentations />} />
               <Route path="/intern/certificate" element={<InternCertificate />} />
             </Route>
