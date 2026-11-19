@@ -118,3 +118,106 @@ export async function resetStaffPassword(actor: Actor, id: string) {
   await logActivity(actor.userId, "USER_PASSWORD_RESET", "User", id);
   return { tempPassword };
 }
+
+function assertHrOrAdmin(actor: Actor) {
+  if (actor.role !== "HR" && actor.role !== "ADMIN") {
+    throw new HttpError(403, "Only HR Manager or Admin can manage mentors");
+  }
+}
+
+export async function listMentorsForHr(actor: Actor) {
+  assertHrOrAdmin(actor);
+  const mentors = await prisma.mentorProfile.findMany({
+    include: {
+      user: { select: { id: true, email: true, username: true, isActive: true, createdAt: true } },
+      interns: { select: { id: true, name: true, email: true, educationalQualification: true } },
+    },
+    orderBy: { createdAt: "desc" },
+  });
+  return mentors.map((m) => ({
+    id: m.id,
+    userId: m.userId,
+    name: m.name,
+    email: m.user.email,
+    phone: m.phone,
+    workStartTime: m.workStartTime,
+    workEndTime: m.workEndTime,
+    isActive: m.user.isActive,
+    assignedInterns: m.interns,
+    assignedInternCount: m.interns.length,
+  }));
+}
+
+export async function createMentorByHr(
+  actor: Actor,
+  input: { name: string; email: string; phone: string; workStartTime: string; workEndTime: string },
+) {
+  assertHrOrAdmin(actor);
+  const tempPassword = generatePassword();
+  const passwordHash = await bcrypt.hash(tempPassword, 12);
+  try {
+    const created = await prisma.$transaction(async (tx) => {
+      const u = await tx.user.create({
+        data: { role: "MENTOR", username: input.email, email: input.email, passwordHash, mustChangePassword: true },
+      });
+      const m = await tx.mentorProfile.create({
+        data: {
+          userId: u.id,
+          name: input.name,
+          phone: input.phone,
+          workStartTime: input.workStartTime,
+          workEndTime: input.workEndTime,
+        },
+      });
+      await logActivity(actor.userId, "MENTOR_CREATED", "MentorProfile", m.id, { email: input.email }, tx);
+      return { u, m };
+    });
+    return { id: created.m.id, userId: created.u.id, email: created.u.email, tempPassword };
+  } catch (e) {
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+      throw new HttpError(409, "An account with this email already exists");
+    }
+    throw e;
+  }
+}
+
+export async function updateMentorByHr(
+  actor: Actor,
+  mentorId: string,
+  input: { name?: string; email?: string; phone?: string; workStartTime?: string; workEndTime?: string },
+) {
+  assertHrOrAdmin(actor);
+  const mentor = await prisma.mentorProfile.findUnique({ where: { id: mentorId } });
+  if (!mentor) throw new HttpError(404, "Mentor not found");
+  await prisma.$transaction(async (tx) => {
+    if (input.email) {
+      await tx.user.update({
+        where: { id: mentor.userId },
+        data: { email: input.email, username: input.email },
+      });
+    }
+    await tx.mentorProfile.update({
+      where: { id: mentorId },
+      data: {
+        name: input.name,
+        phone: input.phone,
+        workStartTime: input.workStartTime,
+        workEndTime: input.workEndTime,
+      },
+    });
+    await logActivity(actor.userId, "MENTOR_UPDATED", "MentorProfile", mentorId, { fields: Object.keys(input) }, tx);
+  });
+}
+
+export async function deleteMentorByHr(actor: Actor, mentorId: string) {
+  assertHrOrAdmin(actor);
+  const mentor = await prisma.mentorProfile.findUnique({ where: { id: mentorId } });
+  if (!mentor) throw new HttpError(404, "Mentor not found");
+  await prisma.$transaction(async (tx) => {
+    await tx.internProfile.updateMany({ where: { mentorId }, data: { mentorId: null } });
+    await tx.project.deleteMany({ where: { createdByMentorId: mentorId } });
+    await tx.mentorNote.deleteMany({ where: { mentorId } });
+    await tx.user.delete({ where: { id: mentor.userId } });
+    await logActivity(actor.userId, "MENTOR_DELETED", "MentorProfile", mentorId, undefined, tx);
+  });
+}

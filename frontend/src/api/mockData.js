@@ -387,10 +387,10 @@ export const handleMockRequest = async (url, method = 'get', data = null) => {
     };
   }
 
-  // 4. HR Mentors
+  // 4. HR Mentors (Add, View, Update, Delete)
   if (cleanUrl === '/hr/mentors') {
+    const current = getStore('mentors', Object.values(INITIAL_USERS).filter(u => u.role === 'MENTOR'));
     if (method.toLowerCase() === 'post') {
-      const current = getStore('mentors', Object.values(INITIAL_USERS).filter(u => u.role === 'MENTOR'));
       const newM = {
         id: Date.now(),
         ...parsedData,
@@ -402,7 +402,44 @@ export const handleMockRequest = async (url, method = 'get', data = null) => {
       setStore('mentors', current);
       return newM;
     }
-    return getStore('mentors', Object.values(INITIAL_USERS).filter(u => u.role === 'MENTOR'));
+    return current;
+  }
+
+  if (cleanUrl.match(/\/hr\/mentors\/\d+/)) {
+    const mentorId = parseInt(cleanUrl.split('/')[3]);
+    const current = getStore('mentors', Object.values(INITIAL_USERS).filter(u => u.role === 'MENTOR'));
+    if (method.toLowerCase() === 'get') {
+      return current.find(m => m.id === mentorId) || current[0];
+    }
+    if (method.toLowerCase() === 'put' || method.toLowerCase() === 'patch') {
+      const target = current.find(m => m.id === mentorId);
+      if (target) {
+        Object.assign(target, parsedData);
+        target.full_name = `${target.first_name || ''} ${target.last_name || ''}`.trim() || target.username;
+        setStore('mentors', current);
+        // Update assigned_mentor_name on any interns linked to this mentor
+        const interns = getStore('interns', Object.values(INITIAL_USERS).filter(u => u.role === 'INTERN'));
+        interns.forEach(i => {
+          if (i.assigned_mentor === mentorId) i.assigned_mentor_name = target.full_name;
+        });
+        setStore('interns', interns);
+      }
+      return target || { status: 'updated' };
+    }
+    if (method.toLowerCase() === 'delete') {
+      const filtered = current.filter(m => m.id !== mentorId);
+      setStore('mentors', filtered);
+      // Unassign interns that belonged to the deleted mentor
+      const interns = getStore('interns', Object.values(INITIAL_USERS).filter(u => u.role === 'INTERN'));
+      interns.forEach(i => {
+        if (i.assigned_mentor === mentorId) {
+          i.assigned_mentor = null;
+          i.assigned_mentor_name = null;
+        }
+      });
+      setStore('interns', interns);
+      return { status: 'deleted' };
+    }
   }
 
   // 5. HR Interns
