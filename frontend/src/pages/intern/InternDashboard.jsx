@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../../api/client';
+import { downloadCertificatePdf } from '../../utils/certificatePdf';
 import {
   GraduationCap, UserCheck, FolderKanban, CheckCircle2,
   Clock, Award, Calendar, ExternalLink, Download, FileText
@@ -128,15 +129,14 @@ const InternDashboard = () => {
 
           <div>
             {certificate?.status === 'APPROVED' ? (
-              <a
-                href={certificate.certificate_file}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex items-center space-x-2 px-5 py-3 rounded-2xl bg-emerald-500 hover:bg-emerald-600 text-white font-semibold text-sm shadow-lg shadow-emerald-500/25 transition-all"
+              <button
+                type="button"
+                onClick={() => downloadCertificatePdf(certificate)}
+                className="inline-flex items-center space-x-2 px-5 py-3 rounded-2xl bg-emerald-500 hover:bg-emerald-600 text-white font-semibold text-sm shadow-lg shadow-emerald-500/25 transition-all cursor-pointer"
               >
                 <Download className="w-4 h-4" />
                 <span>Download Official Certificate (PDF)</span>
-              </a>
+              </button>
             ) : certificate?.status === 'PENDING' ? (
               <div className="px-5 py-3 rounded-2xl bg-amber-500/20 border border-amber-500/40 text-amber-200 text-xs font-medium">
                 Certificate request submitted • Awaiting HR Manager approval
