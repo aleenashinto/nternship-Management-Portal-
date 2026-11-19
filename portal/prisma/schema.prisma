@@ -1,0 +1,402 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  HR
+  MENTOR
+  INTERN
+}
+
+enum InternSource {
+  DIRECT
+  OTHER
+}
+
+enum Tool {
+  EXCEL
+  SQL
+  POWER_BI
+  TABLEAU
+  PYTHON
+  OTHER
+}
+
+enum AssignmentStatus {
+  ASSIGNED
+  IN_PROGRESS
+  SUBMITTED
+  UNDER_REVIEW
+  REVISION_REQUIRED
+  RESUBMITTED
+  COMPLETED
+  OVERDUE
+}
+
+enum ExtensionStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum PresentationStatus {
+  SCHEDULED
+  RESCHEDULED
+  CANCELLED
+  COMPLETED
+}
+
+enum InternshipStatus {
+  NOT_STARTED
+  ONGOING
+  COMPLETED
+  CERTIFICATE_PENDING
+  CERTIFICATE_APPROVED
+  CERTIFICATE_REJECTED
+}
+
+enum CertificateRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum EvaluationDecision {
+  COMPLETED
+  REVISION_REQUIRED
+}
+
+enum FileKind {
+  PROJECT_DATA
+  PROJECT_INSTRUCTIONS
+  SUBMISSION
+}
+
+enum EmailStatus {
+  SENT
+  FAILED
+  LOGGED
+}
+
+model User {
+  id                 String   @id @default(cuid())
+  role               Role
+  username           String   @unique
+  email              String   @unique
+  passwordHash       String
+  isActive           Boolean  @default(true)
+  mustChangePassword Boolean  @default(false)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  hrProfile     HRProfile?
+  mentorProfile MentorProfile?
+  internProfile InternProfile?
+  notifications Notification[]
+  activityLogs  ActivityLog[]
+
+  @@index([role])
+}
+
+model HRProfile {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String
+  createdAt DateTime @default(now())
+}
+
+model MentorProfile {
+  id            String   @id @default(cuid())
+  userId        String   @unique
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name          String
+  phone         String
+  workStartTime String
+  workEndTime   String
+  createdAt     DateTime @default(now())
+
+  interns        InternProfile[]
+  projects       Project[]
+  grantsReceived MentorAccessGrant[] @relation("GrantGrantee")
+  grantsOwned    MentorAccessGrant[] @relation("GrantOwner")
+  notes          MentorNote[]
+}
+
+/// Admin-authorised access: grantee mentor may view interns of owner mentor.
+model MentorAccessGrant {
+  id        String        @id @default(cuid())
+  ownerId   String
+  owner     MentorProfile @relation("GrantOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  granteeId String
+  grantee   MentorProfile @relation("GrantGrantee", fields: [granteeId], references: [id], onDelete: Cascade)
+  createdBy String
+  createdAt DateTime      @default(now())
+
+  @@unique([ownerId, granteeId])
+}
+
+model InternProfile {
+  id                     String       @id @default(cuid())
+  userId                 String       @unique
+  user                   User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name                   String
+  phone1                 String
+  phone2                 String?
+  email                  String
+  address                String
+  educationalQualification String
+  source                 InternSource @default(DIRECT)
+  mentorId               String?
+  mentor                 MentorProfile? @relation(fields: [mentorId], references: [id], onDelete: SetNull)
+  createdAt              DateTime     @default(now())
+  updatedAt              DateTime     @updatedAt
+
+  assignments   ProjectAssignment[]
+  presentations Presentation[]
+  notes         MentorNote[]
+  internship    Internship?
+
+  @@index([mentorId])
+}
+
+model Project {
+  id              String        @id @default(cuid())
+  title           String
+  toolsUsed       Tool[]
+  instructions    String
+  dataSourceText  String?
+  createdByMentorId String
+  createdBy       MentorProfile @relation(fields: [createdByMentorId], references: [id])
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  files       StoredFile[]
+  assignments ProjectAssignment[]
+
+  @@index([createdByMentorId])
+}
+
+/// Metadata for every file; bytes live behind the StorageService (private dir).
+model StoredFile {
+  id           String   @id @default(cuid())
+  kind         FileKind
+  originalName String
+  mimeType     String
+  size         Int
+  storagePath  String
+  uploadedById String
+  createdAt    DateTime @default(now())
+
+  projectId    String?
+  project      Project?    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  submissionId String?
+  submission   Submission? @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@index([submissionId])
+}
+
+model ProjectAssignment {
+  id           String           @id @default(cuid())
+  projectId    String
+  project      Project          @relation(fields: [projectId], references: [id])
+  internId     String
+  intern       InternProfile    @relation(fields: [internId], references: [id])
+  assignedDate DateTime
+  dueDate      DateTime
+  status       AssignmentStatus @default(ASSIGNED)
+  score        Int?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  submissions        Submission[]
+  evaluations        Evaluation[]
+  correctionRequests CorrectionRequest[]
+  extensions         ExtensionRequest[]
+  presentations      Presentation[]
+
+  @@index([internId])
+  @@index([projectId])
+  @@index([status, dueDate])
+}
+
+/// Append-only: each (assignment, version) is unique and never updated.
+model Submission {
+  id           String            @id @default(cuid())
+  assignmentId String
+  assignment   ProjectAssignment @relation(fields: [assignmentId], references: [id])
+  version      Int
+  note         String?
+  submittedAt  DateTime          @default(now())
+
+  files       StoredFile[]
+  evaluations Evaluation[]
+
+  @@unique([assignmentId, version])
+}
+
+model Evaluation {
+  id           String             @id @default(cuid())
+  assignmentId String
+  assignment   ProjectAssignment  @relation(fields: [assignmentId], references: [id])
+  submissionId String
+  submission   Submission         @relation(fields: [submissionId], references: [id])
+  score        Int
+  feedback     String
+  decision     EvaluationDecision
+  evaluatedById String
+  createdAt    DateTime           @default(now())
+
+  @@index([assignmentId])
+}
+
+model CorrectionRequest {
+  id           String            @id @default(cuid())
+  assignmentId String
+  assignment   ProjectAssignment @relation(fields: [assignmentId], references: [id])
+  instructions String
+  createdAt    DateTime          @default(now())
+
+  @@index([assignmentId])
+}
+
+model ExtensionRequest {
+  id            String            @id @default(cuid())
+  assignmentId  String
+  assignment    ProjectAssignment @relation(fields: [assignmentId], references: [id])
+  reason        String
+  requestedDate DateTime
+  status        ExtensionStatus   @default(PENDING)
+  approvedDate  DateTime?
+  decidedById   String?
+  decidedAt     DateTime?
+  createdAt     DateTime          @default(now())
+
+  @@index([assignmentId])
+}
+
+model Presentation {
+  id             String             @id @default(cuid())
+  internId       String
+  intern         InternProfile      @relation(fields: [internId], references: [id])
+  assignmentId   String?
+  assignment     ProjectAssignment? @relation(fields: [assignmentId], references: [id])
+  scheduledAt    DateTime
+  googleMeetLink String
+  status         PresentationStatus @default(SCHEDULED)
+  createdById    String
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  @@index([internId])
+}
+
+/// Immutable, dated record. No update or delete paths exist.
+model MentorNote {
+  id        String        @id @default(cuid())
+  internId  String
+  intern    InternProfile @relation(fields: [internId], references: [id])
+  mentorId  String
+  mentor    MentorProfile @relation(fields: [mentorId], references: [id])
+  content   String
+  createdAt DateTime      @default(now())
+
+  @@index([internId])
+}
+
+model Internship {
+  id                   String           @id @default(cuid())
+  internId             String           @unique
+  intern               InternProfile    @relation(fields: [internId], references: [id])
+  startDate            DateTime
+  endDate              DateTime?
+  completionDate       DateTime?
+  completedByMentorId  String?
+  status               InternshipStatus @default(ONGOING)
+  createdAt            DateTime         @default(now())
+  updatedAt            DateTime         @updatedAt
+
+  certificateRequest CertificateRequest?
+}
+
+model CertificateRequest {
+  id              String                   @id @default(cuid())
+  internshipId    String                   @unique
+  internship      Internship               @relation(fields: [internshipId], references: [id])
+  status          CertificateRequestStatus @default(PENDING)
+  decidedById     String?
+  decidedAt       DateTime?
+  rejectionReason String?
+  createdAt       DateTime                 @default(now())
+
+  certificate Certificate?
+}
+
+model Certificate {
+  id            String             @id @default(cuid())
+  requestId     String             @unique
+  request       CertificateRequest @relation(fields: [requestId], references: [id])
+  certificateNumber String         @unique
+  pdfPath       String
+  issueDate     DateTime           @default(now())
+}
+
+model CertificateTemplate {
+  id             String   @id @default("default")
+  programTitle   String   @default("Data Analytics Internship Program")
+  organisation   String   @default("Beat Education")
+  bodyText       String   @default("has successfully completed the internship program")
+  signatoryName  String   @default("Authorised Signatory")
+  signatoryTitle String   @default("Director")
+  accentColor    String   @default("#4B3A9B")
+  updatedAt      DateTime @updatedAt
+}
+
+model Notification {
+  id          String   @id @default(cuid())
+  recipientId String
+  recipient   User     @relation(fields: [recipientId], references: [id], onDelete: Cascade)
+  type        String
+  title       String
+  message     String
+  link        String?
+  isRead      Boolean  @default(false)
+  eventId     String
+  createdAt   DateTime @default(now())
+
+  @@unique([eventId, recipientId])
+  @@index([recipientId, isRead])
+}
+
+model EmailLog {
+  id        String      @id @default(cuid())
+  recipient String
+  subject   String
+  status    EmailStatus
+  error     String?
+  eventId   String
+  createdAt DateTime    @default(now())
+
+  @@unique([eventId, recipient])
+}
+
+model ActivityLog {
+  id         String   @id @default(cuid())
+  userId     String?
+  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action     String
+  entityType String
+  entityId   String?
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([entityType, entityId])
+}

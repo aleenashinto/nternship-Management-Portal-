@@ -1,0 +1,45 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: portal
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  mailhog:
+    image: mailhog/mailhog:v1.0.1
+    restart: unless-stopped
+    ports:
+      - "1025:1025" # SMTP
+      - "8025:8025" # Web UI
+
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      - postgres
+      - mailhog
+    environment:
+      DATABASE_URL: "postgresql://postgres:postgres@postgres:5432/portal?schema=public"
+      SESSION_SECRET: "production-session-secret-change-me-at-least-32-chars"
+      APP_URL: "http://localhost:3000"
+      STORAGE_DIR: "/app/storage"
+      SMTP_HOST: "mailhog"
+      SMTP_PORT: "1025"
+      MAIL_FROM: "Beat Internship Portal <no-reply@beat.local>"
+      CRON_SECRET: "change-me-cron-secret"
+    ports:
+      - "3000:3000"
+    volumes:
+      - app_storage:/app/storage
+
+volumes:
+  pgdata:
+  app_storage:
