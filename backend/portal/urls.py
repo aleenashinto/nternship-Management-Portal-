@@ -52,6 +52,7 @@ urlpatterns = [
     path('mentor/dashboard/', MentorDashboardView.as_view(), name='mentor-dashboard'),
     path('mentor/interns/', MentorInternsView.as_view(), name='mentor-interns-list'),
     path('mentor/interns/<int:pk>/', MentorInternsView.as_view(), name='mentor-intern-detail'),
+    path('mentor/interns/<int:pk>/complete-internship/', MentorInternsView.as_view(), name='mentor-complete-internship'),
 
     # Intern Views
     path('intern/profile/', InternProfileView.as_view(), name='intern-profile'),

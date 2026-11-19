@@ -164,11 +164,14 @@ class InternshipPortalEndToEndTests(TestCase):
         self.assertEqual(ev_res.status_code, 200)
         self.assertEqual(ProjectAssignment.objects.get(id=assignment_id).status, ProjectAssignmentStatus.COMPLETED)
 
-        # Intern requests certificate -> HR approves -> ReportLab PDF generated
-        self.client.force_authenticate(user=self.intern)
-        c_res = self.client.post("/api/intern/certificate/")
-        self.assertEqual(c_res.status_code, 201)
-        cert_id = c_res.data["id"]
+        # Mentor marks overall internship completed -> triggers unique PENDING certificate request for HR
+        comp_res = self.client.post(f"/api/mentor/interns/{self.intern.id}/complete-internship/")
+        self.assertEqual(comp_res.status_code, 201)
+        cert_id = comp_res.data["id"]
+
+        # Duplicate completion call is rejected (prevents duplicate certificate requests)
+        dup_res = self.client.post(f"/api/mentor/interns/{self.intern.id}/complete-internship/")
+        self.assertEqual(dup_res.status_code, 400)
 
         self.client.force_authenticate(user=self.hr)
         app_res = self.client.post(f"/api/hr/certificates/{cert_id}/approve/")

@@ -601,17 +601,104 @@ export const handleMockRequest = async (url, method = 'get', data = null) => {
     return getStore('projects', INITIAL_PROJECTS);
   }
 
+  if (cleanUrl.match(/\/mentor\/projects\/\d+/)) {
+    const projId = parseInt(cleanUrl.split('/')[3]);
+    const projs = getStore('projects', INITIAL_PROJECTS);
+    if (method.toLowerCase() === 'patch' || method.toLowerCase() === 'put') {
+      const target = projs.find(p => p.id === projId);
+      if (target) {
+        Object.assign(target, parsedData);
+        if (typeof parsedData?.tools_used === 'string') {
+          try { target.tools_used = JSON.parse(parsedData.tools_used); } catch {}
+        }
+        setStore('projects', projs);
+      }
+      return target || { status: 'updated' };
+    }
+    if (method.toLowerCase() === 'delete') {
+      const filtered = projs.filter(p => p.id !== projId);
+      setStore('projects', filtered);
+      return { status: 'deleted' };
+    }
+  }
+
   // 10. Mentor Interns
   if (cleanUrl === '/mentor/interns') {
-    return [INITIAL_USERS.intern_emma, INITIAL_USERS.intern_john];
+    const allInterns = getStore('interns', Object.values(INITIAL_USERS).filter(u => u.role === 'INTERN'));
+    if (activeUser?.role === 'ADMIN') return allInterns;
+    const mentorId = activeUser?.id || 3;
+    const assigned = allInterns.filter(i => Number(i.assigned_mentor) === Number(mentorId));
+    return assigned.length > 0 ? assigned : allInterns.filter(i => i.assigned_mentor);
+  }
+
+  if (cleanUrl.match(/\/mentor\/interns\/\d+\/notes/)) {
+    const internId = parseInt(cleanUrl.split('/')[3]);
+    const notes = getStore('mentor_notes', [
+      {
+        id: 1,
+        intern: 4,
+        mentor_name: 'David Miller',
+        content: 'Strong SQL cohort query modeling and clear executive presentation.',
+        created_at: new Date(Date.now() - 86400000).toISOString(),
+      },
+    ]);
+    if (method.toLowerCase() === 'post') {
+      const n = {
+        id: Date.now(),
+        intern: internId,
+        mentor_name: activeUser?.full_name || 'David Miller',
+        content: parsedData.content,
+        created_at: new Date().toISOString(),
+      };
+      notes.unshift(n);
+      setStore('mentor_notes', notes);
+      return n;
+    }
+    return notes.filter(n => n.intern === internId);
+  }
+
+  if (cleanUrl.match(/\/mentor\/interns\/\d+\/complete-internship/)) {
+    const internId = parseInt(cleanUrl.split('/')[3]);
+    const allInterns = getStore('interns', Object.values(INITIAL_USERS).filter(u => u.role === 'INTERN'));
+    const intern = allInterns.find(i => i.id === internId) || INITIAL_USERS.intern_emma;
+    intern.internship_completed = true;
+    setStore('interns', allInterns);
+
+    const certs = getStore('certificates', INITIAL_CERTIFICATES);
+    const existing = certs.find(c => c.intern === internId && ['PENDING', 'APPROVED'].includes(c.status));
+    if (!existing) {
+      const assignments = getStore('assignments', INITIAL_ASSIGNMENTS).filter(a => a.intern === internId && a.status === 'COMPLETED');
+      certs.unshift({
+        id: Date.now(),
+        intern: internId,
+        intern_name: intern.full_name || intern.username,
+        intern_email: intern.email,
+        status: 'PENDING',
+        completed_projects_count: assignments.length || 1,
+        request_date: new Date().toISOString(),
+      });
+      setStore('certificates', certs);
+    }
+    return { status: 'internship_completed', certificate_requested: true };
   }
 
   if (cleanUrl.match(/\/mentor\/interns\/\d+/)) {
     const internId = parseInt(cleanUrl.split('/')[3]);
-    const intern = Object.values(INITIAL_USERS).find(i => i.id === internId) || INITIAL_USERS.intern_emma;
+    const allInterns = getStore('interns', Object.values(INITIAL_USERS).filter(u => u.role === 'INTERN'));
+    const intern = allInterns.find(i => i.id === internId) || Object.values(INITIAL_USERS).find(i => i.id === internId) || INITIAL_USERS.intern_emma;
     const assignments = getStore('assignments', INITIAL_ASSIGNMENTS).filter(a => a.intern === internId);
     const presentations = getStore('presentations', INITIAL_PRESENTATIONS).filter(p => p.intern === internId);
-    return { intern, assignments, presentations };
+    const notes = getStore('mentor_notes', [
+      {
+        id: 1,
+        intern: 4,
+        mentor_name: 'David Miller',
+        content: 'Strong SQL cohort query modeling and clear executive presentation.',
+        created_at: new Date(Date.now() - 86400000).toISOString(),
+      },
+    ]).filter(n => n.intern === internId);
+    const certs = getStore('certificates', INITIAL_CERTIFICATES).filter(c => c.intern === internId);
+    return { intern, assignments, presentations, notes, certificate: certs[0] || null };
   }
 
   // 11. Mentor Assignments
@@ -737,6 +824,29 @@ export const handleMockRequest = async (url, method = 'get', data = null) => {
       return newP;
     }
     return getStore('presentations', INITIAL_PRESENTATIONS);
+  }
+
+  if (cleanUrl.match(/\/mentor\/presentations\/\d+/)) {
+    const presId = parseInt(cleanUrl.split('/')[3]);
+    const current = getStore('presentations', INITIAL_PRESENTATIONS);
+    if (method.toLowerCase() === 'patch' || method.toLowerCase() === 'put') {
+      const target = current.find(p => p.id === presId);
+      if (target) {
+        Object.assign(target, parsedData);
+        if (parsedData?.project) {
+          const projs = getStore('projects', INITIAL_PROJECTS);
+          const proj = projs.find(pr => pr.id === parseInt(parsedData.project));
+          if (proj) target.project_title = proj.title;
+        }
+        if (parsedData?.intern) {
+          const allInterns = getStore('interns', Object.values(INITIAL_USERS).filter(u => u.role === 'INTERN'));
+          const intr = allInterns.find(i => i.id === parseInt(parsedData.intern));
+          if (intr) target.intern_name = intr.full_name || intr.username;
+        }
+        setStore('presentations', current);
+      }
+      return target || { status: 'updated' };
+    }
   }
 
   // 14. Intern Profile

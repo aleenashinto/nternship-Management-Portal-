@@ -14,6 +14,27 @@ const MentorInterns = () => {
   const [selectedIntern, setSelectedIntern] = useState(null);
   const [profileData, setProfileData] = useState(null);
   const [profileLoading, setProfileLoading] = useState(false);
+  const [noteInput, setNoteInput] = useState('');
+  const [completingInternship, setCompletingInternship] = useState(false);
+
+  const handleAddNote = async (e) => {
+    e.preventDefault();
+    if (!noteInput.trim() || !selectedIntern) return;
+    await api.post(`/mentor/interns/${selectedIntern.id}/notes/`, { content: noteInput });
+    setNoteInput('');
+    openInternProfile(selectedIntern);
+  };
+
+  const handleCompleteInternship = async () => {
+    if (!selectedIntern) return;
+    setCompletingInternship(true);
+    try {
+      await api.post(`/mentor/interns/${selectedIntern.id}/complete-internship/`, {});
+      await openInternProfile(selectedIntern);
+    } finally {
+      setCompletingInternship(false);
+    }
+  };
 
   const fetchInterns = async () => {
     try {
@@ -154,6 +175,55 @@ const MentorInterns = () => {
               <div className="col-span-2">
                 <span className="text-gray-400 block font-semibold mb-0.5">ADDRESS</span>
                 <span className="text-gray-900 font-medium">{profileData.intern.address || 'N/A'}</span>
+              </div>
+              <div className="col-span-2 flex items-center justify-between pt-2 border-t border-slate-200">
+                <div>
+                  <span className="text-gray-400 block font-semibold mb-0.5">OVERALL INTERNSHIP & CERTIFICATE STATUS</span>
+                  <span className="inline-block px-2.5 py-0.5 rounded-full bg-blue-100 text-blue-800 font-bold text-xs">
+                    {profileData.certificate ? `CERTIFICATE ${profileData.certificate.status}` : 'ONGOING INTERNSHIP'}
+                  </span>
+                </div>
+                {!profileData.certificate && (
+                  <button
+                    onClick={handleCompleteInternship}
+                    disabled={completingInternship}
+                    className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs transition-colors"
+                  >
+                    {completingInternship ? 'Completing...' : 'Mark Internship Completed & Request HR Certificate'}
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Immutable Dated Mentor Notes */}
+            <div>
+              <h4 className="text-sm font-bold text-gray-900 mb-2">Immutable Dated Mentor Notes</h4>
+              <form onSubmit={handleAddNote} className="flex gap-2 mb-3">
+                <input
+                  type="text"
+                  value={noteInput}
+                  onChange={e => setNoteInput(e.target.value)}
+                  placeholder="Add a permanent dated mentor observation or presentation remark..."
+                  className="flex-1 px-3 py-2 border border-gray-200 rounded-xl text-xs"
+                />
+                <button type="submit" className="px-4 py-2 rounded-xl bg-blue-600 text-white text-xs font-semibold hover:bg-blue-700">
+                  Add Note
+                </button>
+              </form>
+              <div className="space-y-2 max-h-36 overflow-y-auto">
+                {(profileData.notes || []).length === 0 ? (
+                  <p className="text-xs text-gray-400">No mentor notes recorded yet.</p>
+                ) : (
+                  (profileData.notes || []).map(n => (
+                    <div key={n.id} className="p-2.5 rounded-xl bg-slate-50 border border-slate-100 text-xs">
+                      <div className="flex justify-between text-gray-400 text-[11px]">
+                        <b className="text-gray-700">{n.mentor_name}</b>
+                        <span>{new Date(n.created_at).toLocaleString()}</span>
+                      </div>
+                      <p className="text-gray-800 mt-1">{n.content}</p>
+                    </div>
+                  ))
+                )}
               </div>
             </div>
 

@@ -304,11 +304,13 @@ class MentorInternsView(APIView):
             
             assignments = ProjectAssignment.objects.filter(intern=intern).select_related('project')
             presentations = PresentationSchedule.objects.filter(intern=intern).select_related('project')
+            certificate = Certificate.objects.filter(intern=intern).order_by('-request_date').first()
             
             return Response({
                 'intern': UserSerializer(intern).data,
                 'assignments': ProjectAssignmentSerializer(assignments, many=True).data,
-                'presentations': PresentationScheduleSerializer(presentations, many=True).data
+                'presentations': PresentationScheduleSerializer(presentations, many=True).data,
+                'certificate': CertificateSerializer(certificate).data if certificate else None,
             })
         else:
             # List all assigned interns
@@ -317,6 +319,30 @@ class MentorInternsView(APIView):
             else:
                 interns = mentor.assigned_interns.all()
             return Response(UserSerializer(interns, many=True).data)
+
+    def post(self, request, pk=None):
+        """Mentor explicitly marks overall internship completed and triggers a unique CertificateRequest for HR."""
+        intern = get_object_or_404(User, id=pk, role=UserRole.INTERN)
+        if request.user.role != UserRole.ADMIN and intern.assigned_mentor_id != request.user.id:
+            return Response({'detail': 'Access denied.'}, status=status.HTTP_403_FORBIDDEN)
+
+        existing = Certificate.objects.filter(intern=intern, status__in=['PENDING', 'APPROVED']).first()
+        if existing:
+            return Response(
+                {'detail': f'Certificate request already {existing.status.lower()}.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        cert = Certificate.objects.create(intern=intern, status='PENDING')
+        for hr in User.objects.filter(role__in=[UserRole.HR, UserRole.ADMIN]):
+            send_notification_and_email(
+                recipient=hr,
+                title=f"Internship Completed & Certificate Pending: {intern.get_full_name() or intern.username}",
+                message=f"Mentor {request.user.get_full_name() or request.user.username} marked {intern.get_full_name() or intern.username}'s internship completed.",
+                notification_type='CERTIFICATE_STATUS',
+                link='/hr/certificates'
+            )
+        return Response(CertificateSerializer(cert).data, status=status.HTTP_201_CREATED)
 
 
 class MentorAssignmentsViewSet(viewsets.ModelViewSet):
