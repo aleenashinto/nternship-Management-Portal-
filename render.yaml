@@ -1,0 +1,42 @@
+services:
+  - type: web
+    name: beat-internship-backend
+    runtime: python
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt && python manage.py migrate --noinput && python manage.py collectstatic --noinput && python manage.py seed_data
+    startCommand: gunicorn internship_backend.wsgi:application --bind 0.0.0.0:$PORT
+    envVars:
+      - key: DEBUG
+        value: "False"
+      - key: ALLOWED_HOSTS
+        value: "*"
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DB_ENGINE
+        value: django.db.backends.postgresql
+      - key: DB_NAME
+        fromDatabase:
+          name: beat-internship-db
+          property: database
+      - key: DB_USER
+        fromDatabase:
+          name: beat-internship-db
+          property: user
+      - key: DB_PASSWORD
+        fromDatabase:
+          name: beat-internship-db
+          property: password
+      - key: DB_HOST
+        fromDatabase:
+          name: beat-internship-db
+          property: host
+      - key: DB_PORT
+        fromDatabase:
+          name: beat-internship-db
+          property: port
+
+databases:
+  - name: beat-internship-db
+    plan: free
+    databaseName: internship_portal
+    user: portal_user
