@@ -14,6 +14,7 @@ from .views import (
     InternPresentationsView, InternCertificateView,
     NotificationViewSet, DeadlineReminderCheckView
 )
+from .openapi import OpenAPISchemaView, SwaggerDocsView
 
 router = DefaultRouter()
 # HR ViewSets
@@ -35,6 +36,10 @@ router.register(r'intern/extensions', InternExtensionViewSet, basename='intern-e
 router.register(r'notifications', NotificationViewSet, basename='notifications')
 
 urlpatterns = [
+    # Swagger / OpenAPI Documentation
+    path('schema/', OpenAPISchemaView.as_view(), name='openapi-schema'),
+    path('docs/', SwaggerDocsView.as_view(), name='swagger-docs'),
+
     # Auth endpoints
     path('auth/login/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('auth/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
