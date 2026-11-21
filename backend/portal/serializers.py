@@ -1,7 +1,8 @@
 from rest_framework import serializers
 from .models import (
     User, UserRole, Project, ProjectAssignment,
-    ExtensionRequest, PresentationSchedule, Certificate, Notification
+    ExtensionRequest, PresentationSchedule, Certificate, Notification,
+    WebsiteBranding, WebsiteTheme
 )
 
 class UserSerializer(serializers.ModelSerializer):
@@ -214,3 +215,20 @@ class NotificationSerializer(serializers.ModelSerializer):
         model = Notification
         fields = ['id', 'title', 'message', 'notification_type', 'is_read', 'link', 'created_at']
         read_only_fields = ['id', 'created_at']
+
+
+class WebsiteBrandingSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = WebsiteBranding
+        fields = [
+            'id', 'site_name', 'primary_logo', 'dark_logo',
+            'light_logo', 'mobile_logo', 'favicon', 'updated_at'
+        ]
+        read_only_fields = ['id', 'updated_at']
+
+
+class WebsiteThemeSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = WebsiteTheme
+        fields = '__all__'
+        read_only_fields = ['id', 'created_at', 'updated_at']

@@ -1,10 +1,22 @@
 import React from 'react';
 import { useAuth } from '../context/AuthContext';
+import { useTheme } from '../context/ThemeContext';
 import NotificationDropdown from './NotificationDropdown';
-import { LogOut, UserCircle2, GraduationCap, Shield, Briefcase, Award } from 'lucide-react';
+import { LogOut, GraduationCap, Shield, Briefcase, Award } from 'lucide-react';
 
 const Navbar = ({ onToggleSidebar }) => {
   const { user, logout } = useAuth();
+  const { branding, theme } = useTheme();
+
+  const isDarkHeader =
+    theme?.color_mode === 'dark' ||
+    (theme?.header_color && theme.header_color.toLowerCase() !== '#ffffff' && theme.header_color.toLowerCase() !== '#f8fafc');
+
+  const activeDesktopLogo = isDarkHeader
+    ? branding?.dark_logo || branding?.primary_logo || '/beat-logo.png'
+    : branding?.primary_logo || '/beat-logo.png';
+
+  const activeMobileLogo = branding?.mobile_logo || activeDesktopLogo;
 
   const getRoleBadge = (role) => {
     switch (role) {
@@ -42,7 +54,13 @@ const Navbar = ({ onToggleSidebar }) => {
   };
 
   return (
-    <header className="h-16 bg-white border-b border-gray-200 sticky top-0 z-30 flex items-center justify-between px-4 sm:px-6 shadow-xs">
+    <header
+      className="h-16 bg-white border-b border-gray-200 sticky top-0 z-30 flex items-center justify-between px-4 sm:px-6 shadow-xs transition-colors"
+      style={{
+        backgroundColor: 'var(--color-header, #ffffff)',
+        borderColor: 'var(--color-border, #e2e8f0)',
+      }}
+    >
       {/* Brand logo & mobile toggle */}
       <div className="flex items-center space-x-3">
         <button
@@ -56,10 +74,19 @@ const Navbar = ({ onToggleSidebar }) => {
         </button>
 
         <div className="flex items-center space-x-2">
-          <img src="/beat-logo.png" alt="Beat" className="h-9 w-auto object-contain" />
+          <img
+            src={activeDesktopLogo}
+            alt={branding?.site_name || 'Beat'}
+            className="hidden sm:block h-9 w-auto object-contain"
+          />
+          <img
+            src={activeMobileLogo}
+            alt={branding?.site_name || 'Beat'}
+            className="sm:hidden h-8 w-auto object-contain"
+          />
           <div>
             <span className="hidden md:inline-block font-semibold text-gray-700 tracking-tight text-sm border-l border-gray-200 pl-3">
-              Internship Portal
+              {branding?.site_name || 'Internship Portal'}
             </span>
             <span className="hidden sm:inline-block ml-2 text-[11px] font-medium text-gray-400 bg-gray-100 px-2 py-0.5 rounded">
               v1.0

@@ -12,7 +12,10 @@ from .views import (
     MentorAssignmentsViewSet, MentorExtensionRequestsViewSet, MentorPresentationsViewSet,
     InternProfileView, InternAssignmentsViewSet, InternExtensionViewSet,
     InternPresentationsView, InternCertificateView,
-    NotificationViewSet, DeadlineReminderCheckView
+    NotificationViewSet, DeadlineReminderCheckView,
+    PublicWebsiteConfigView, AdminBrandingView, AdminBrandingUploadView,
+    AdminBrandingLogoDeleteView, AdminThemeView, AdminThemeDraftView,
+    AdminThemePublishView, AdminThemeResetView
 )
 from .openapi import OpenAPISchemaView, SwaggerDocsView
 
@@ -61,6 +64,16 @@ urlpatterns = [
 
     # Reminders
     path('reminders/check/', DeadlineReminderCheckView.as_view(), name='deadline-reminders-check'),
+
+    # Public Website Config & Admin Branding / Theme Customization
+    path('public/website-config/', PublicWebsiteConfigView.as_view(), name='public-website-config'),
+    path('admin/branding/', AdminBrandingView.as_view(), name='admin-branding'),
+    path('admin/branding/upload/', AdminBrandingUploadView.as_view(), name='admin-branding-upload'),
+    path('admin/branding/logo/', AdminBrandingLogoDeleteView.as_view(), name='admin-branding-logo-delete'),
+    path('admin/theme/', AdminThemeView.as_view(), name='admin-theme'),
+    path('admin/theme/draft/', AdminThemeDraftView.as_view(), name='admin-theme-draft'),
+    path('admin/theme/publish/', AdminThemePublishView.as_view(), name='admin-theme-publish'),
+    path('admin/theme/reset/', AdminThemeResetView.as_view(), name='admin-theme-reset'),
 
     # Router endpoints
     path('', include(router.urls)),

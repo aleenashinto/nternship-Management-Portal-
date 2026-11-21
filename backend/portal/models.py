@@ -311,3 +311,54 @@ class Notification(models.Model):
 
     def __str__(self):
         return f"[{'READ' if self.is_read else 'UNREAD'}] {self.recipient.username}: {self.title}"
+
+
+class WebsiteBranding(models.Model):
+    site_name = models.CharField(max_length=120, default='Beat Internship Portal')
+    primary_logo = models.TextField(blank=True, default='/beat-logo.png')
+    dark_logo = models.TextField(blank=True, default='/beat-logo.png')
+    light_logo = models.TextField(blank=True, default='/beat-logo.png')
+    mobile_logo = models.TextField(blank=True, default='/beat-logo.png')
+    favicon = models.TextField(blank=True, default='/beat-logo.png')
+    updated_by = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"Branding: {self.site_name}"
+
+
+class WebsiteTheme(models.Model):
+    theme_name = models.CharField(max_length=100, default='Default Professional')
+    primary_color = models.CharField(max_length=20, default='#2563EB')
+    secondary_color = models.CharField(max_length=20, default='#4F46E5')
+    accent_color = models.CharField(max_length=20, default='#F59E0B')
+    background_color = models.CharField(max_length=20, default='#F8FAFC')
+    surface_color = models.CharField(max_length=20, default='#FFFFFF')
+    text_color = models.CharField(max_length=20, default='#0F172A')
+    secondary_text_color = models.CharField(max_length=20, default='#475569')
+    border_color = models.CharField(max_length=20, default='#E2E8F0')
+    header_color = models.CharField(max_length=20, default='#FFFFFF')
+    sidebar_color = models.CharField(max_length=20, default='#FFFFFF')
+    button_color = models.CharField(max_length=20, default='#2563EB')
+    link_color = models.CharField(max_length=20, default='#2563EB')
+    font_family = models.CharField(max_length=100, default='Sora')
+    heading_font = models.CharField(max_length=100, default='Sora')
+    body_font = models.CharField(max_length=100, default='Sora')
+    base_font_size = models.CharField(max_length=20, default='16px')
+    heading_weight = models.CharField(max_length=20, default='700')
+    body_weight = models.CharField(max_length=20, default='400')
+    border_radius = models.CharField(max_length=20, default='16px')
+    button_radius = models.CharField(max_length=20, default='12px')
+    input_radius = models.CharField(max_length=20, default='12px')
+    container_spacing = models.CharField(max_length=20, default='24px')
+    button_style = models.CharField(max_length=30, default='solid')
+    shadow_intensity = models.CharField(max_length=30, default='medium')
+    sidebar_width = models.CharField(max_length=20, default='256px')
+    color_mode = models.CharField(max_length=20, default='light')  # light | dark | system
+    is_active = models.BooleanField(default=True)
+    is_draft = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"Theme: {self.theme_name} ({'Draft' if self.is_draft else 'Published'})"

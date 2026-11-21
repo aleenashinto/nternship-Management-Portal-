@@ -3,7 +3,8 @@ import { NavLink } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import {
   LayoutDashboard, Users, UserCheck, Award, FolderKanban,
-  FileCheck2, Clock, Calendar, GraduationCap, FileText
+  FileCheck2, Clock, Calendar, GraduationCap, FileText,
+  Image as ImageIcon, Palette, Type, Sliders
 } from 'lucide-react';
 
 const Sidebar = ({ isOpen, onClose }) => {
@@ -43,6 +44,13 @@ const Sidebar = ({ isOpen, onClose }) => {
     { to: '/admin/logs', label: 'Activity Audit Logs', icon: Clock },
   ];
 
+  const websiteSettingsLinks = [
+    { to: '/admin/branding', label: 'Branding & Logo', icon: ImageIcon },
+    { to: '/admin/theme', label: 'Theme Customization', icon: Palette },
+    { to: '/admin/typography', label: 'Typography', icon: Type },
+    { to: '/admin/appearance', label: 'Appearance Settings', icon: Sliders },
+  ];
+
   const getLinks = () => {
     if (role === 'HR') return hrLinks;
     if (role === 'MENTOR') return mentorLinks;
@@ -51,6 +59,8 @@ const Sidebar = ({ isOpen, onClose }) => {
       return [
         { header: 'Admin Module' },
         ...adminLinks,
+        { header: 'Website Settings' },
+        ...websiteSettingsLinks,
         { header: 'HR Module' },
         ...hrLinks,
         { header: 'Mentor Module' },
@@ -83,6 +93,11 @@ const Sidebar = ({ isOpen, onClose }) => {
         className={`fixed lg:static top-16 bottom-0 left-0 w-64 bg-white border-r border-gray-200 z-40 transition-transform duration-200 ease-in-out overflow-y-auto ${
           isOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
         }`}
+        style={{
+          backgroundColor: 'var(--color-sidebar, #ffffff)',
+          borderColor: 'var(--color-border, #e2e8f0)',
+          width: 'var(--sidebar-width, 256px)',
+        }}
       >
         <div className="p-4 space-y-6">
           <div className="space-y-1">

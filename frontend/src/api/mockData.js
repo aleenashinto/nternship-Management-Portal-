@@ -1045,5 +1045,187 @@ export const handleMockRequest = async (url, method = 'get', data = null) => {
     return getStore('activity_logs', defaultLogs);
   }
 
+  // 21. Website Branding & Dynamic Theme Customization
+  const DEFAULT_BRANDING = {
+    id: 1,
+    site_name: 'Beat Internship Portal',
+    primary_logo: '/beat-logo.png',
+    dark_logo: '/beat-logo.png',
+    light_logo: '/beat-logo.png',
+    mobile_logo: '/beat-logo.png',
+    favicon: '/beat-logo.png',
+    updated_by: 'admin',
+    updated_at: new Date().toISOString(),
+  };
+
+  const DEFAULT_THEME = {
+    id: 1,
+    theme_name: 'Default Professional',
+    primary_color: '#2563EB',
+    secondary_color: '#4F46E5',
+    accent_color: '#F59E0B',
+    background_color: '#F8FAFC',
+    surface_color: '#FFFFFF',
+    text_color: '#0F172A',
+    secondary_text_color: '#475569',
+    border_color: '#E2E8F0',
+    sidebar_color: '#FFFFFF',
+    header_color: '#FFFFFF',
+    button_color: '#2563EB',
+    link_color: '#2563EB',
+    font_family: 'Sora',
+    heading_font: 'Sora',
+    body_font: 'Sora',
+    base_font_size: '16px',
+    heading_weight: '700',
+    body_weight: '400',
+    border_radius: '16px',
+    button_radius: '12px',
+    input_radius: '12px',
+    container_spacing: '24px',
+    button_style: 'solid',
+    shadow_intensity: 'medium',
+    sidebar_width: '256px',
+    color_mode: 'light',
+    is_active: true,
+    is_draft: false,
+    updated_by: 'admin',
+    updated_at: new Date().toISOString(),
+  };
+
+  if (cleanUrl === '/public/website-config') {
+    return {
+      branding: getStore('website_branding', DEFAULT_BRANDING),
+      theme: getStore('website_theme_published', DEFAULT_THEME),
+    };
+  }
+
+  if (cleanUrl === '/admin/branding') {
+    const current = getStore('website_branding', DEFAULT_BRANDING);
+    if (method.toLowerCase() === 'put' || method.toLowerCase() === 'post') {
+      const updated = { ...current, ...parsedData, updated_at: new Date().toISOString() };
+      setStore('website_branding', updated);
+      const logs = getStore('activity_logs', []);
+      logs.unshift({
+        id: Date.now(),
+        actor: 'admin',
+        role: 'ADMIN',
+        action: 'WEBSITE_BRANDING_UPDATED',
+        entity: 'WebsiteBranding #1',
+        metadata: `Updated site branding (${updated.site_name})`,
+        created_at: new Date().toISOString(),
+      });
+      setStore('activity_logs', logs);
+      return updated;
+    }
+    return current;
+  }
+
+  if (cleanUrl === '/admin/branding/upload' && method.toLowerCase() === 'post') {
+    const current = getStore('website_branding', DEFAULT_BRANDING);
+    const variant = parsedData.variant || 'primary_logo';
+    const dataUrl = parsedData.data_url || parsedData.url || '/beat-logo.png';
+    if (typeof dataUrl === 'string' && (dataUrl.toLowerCase().includes('<script') || dataUrl.toLowerCase().includes('javascript:'))) {
+      throw { response: { status: 400, data: { error: 'SVG files containing scripts are prohibited for security reasons.' } } };
+    }
+    const updated = { ...current, [variant]: dataUrl, updated_at: new Date().toISOString() };
+    if (parsedData.site_name) updated.site_name = parsedData.site_name;
+    setStore('website_branding', updated);
+    const logs = getStore('activity_logs', []);
+    logs.unshift({
+      id: Date.now(),
+      actor: 'admin',
+      role: 'ADMIN',
+      action: 'WEBSITE_LOGO_UPLOADED',
+      entity: `WebsiteBranding (${variant})`,
+      metadata: parsedData.filename || variant,
+      created_at: new Date().toISOString(),
+    });
+    setStore('activity_logs', logs);
+    return { status: 'uploaded', variant, url: dataUrl, branding: updated };
+  }
+
+  if (cleanUrl === '/admin/branding/logo' && method.toLowerCase() === 'delete') {
+    const current = getStore('website_branding', DEFAULT_BRANDING);
+    const variant = parsedData.variant || 'all';
+    let updated;
+    if (variant === 'all') {
+      updated = { ...DEFAULT_BRANDING, site_name: current.site_name, updated_at: new Date().toISOString() };
+    } else {
+      updated = { ...current, [variant]: '/beat-logo.png', updated_at: new Date().toISOString() };
+    }
+    setStore('website_branding', updated);
+    return { status: 'reset', branding: updated };
+  }
+
+  if (cleanUrl === '/admin/theme') {
+    const published = getStore('website_theme_published', DEFAULT_THEME);
+    const draft = getStore('website_theme_draft', null);
+    if (method.toLowerCase() === 'put') {
+      const updated = { ...published, ...parsedData, is_active: true, is_draft: false, updated_at: new Date().toISOString() };
+      setStore('website_theme_published', updated);
+      return updated;
+    }
+    return { published, draft };
+  }
+
+  if (cleanUrl === '/admin/theme/draft' && method.toLowerCase() === 'post') {
+    const published = getStore('website_theme_published', DEFAULT_THEME);
+    const currentDraft = getStore('website_theme_draft', published);
+    const updatedDraft = { ...currentDraft, ...parsedData, is_draft: true, is_active: false, updated_at: new Date().toISOString() };
+    setStore('website_theme_draft', updatedDraft);
+    const logs = getStore('activity_logs', []);
+    logs.unshift({
+      id: Date.now(),
+      actor: 'admin',
+      role: 'ADMIN',
+      action: 'WEBSITE_THEME_DRAFT_SAVED',
+      entity: 'WebsiteTheme (Draft)',
+      metadata: updatedDraft.theme_name,
+      created_at: new Date().toISOString(),
+    });
+    setStore('activity_logs', logs);
+    return { status: 'draft_saved', draft: updatedDraft };
+  }
+
+  if (cleanUrl === '/admin/theme/publish' && method.toLowerCase() === 'post') {
+    const published = getStore('website_theme_published', DEFAULT_THEME);
+    const draft = getStore('website_theme_draft', null);
+    const base = Object.keys(parsedData || {}).length > 0 ? { ...published, ...parsedData } : (draft || published);
+    const nextPublished = { ...base, is_active: true, is_draft: false, updated_at: new Date().toISOString() };
+    setStore('website_theme_published', nextPublished);
+    localStorage.removeItem('beat_mock_v2_website_theme_draft');
+    const logs = getStore('activity_logs', []);
+    logs.unshift({
+      id: Date.now(),
+      actor: 'admin',
+      role: 'ADMIN',
+      action: 'WEBSITE_THEME_PUBLISHED',
+      entity: 'WebsiteTheme (Published)',
+      metadata: `${nextPublished.theme_name} (${nextPublished.primary_color})`,
+      created_at: new Date().toISOString(),
+    });
+    setStore('activity_logs', logs);
+    return { status: 'published', theme: nextPublished };
+  }
+
+  if (cleanUrl === '/admin/theme/reset' && method.toLowerCase() === 'post') {
+    const resetTheme = { ...DEFAULT_THEME, updated_at: new Date().toISOString() };
+    setStore('website_theme_published', resetTheme);
+    localStorage.removeItem('beat_mock_v2_website_theme_draft');
+    const logs = getStore('activity_logs', []);
+    logs.unshift({
+      id: Date.now(),
+      actor: 'admin',
+      role: 'ADMIN',
+      action: 'WEBSITE_THEME_RESET',
+      entity: 'WebsiteTheme #1',
+      metadata: 'Reset to Default Professional',
+      created_at: new Date().toISOString(),
+    });
+    setStore('activity_logs', logs);
+    return { status: 'reset', theme: resetTheme };
+  }
+
   return { status: 'ok' };
 };

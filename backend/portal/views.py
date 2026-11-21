@@ -10,12 +10,14 @@ from datetime import timedelta
 
 from .models import (
     User, UserRole, Project, ProjectAssignment, ProjectAssignmentStatus,
-    ExtensionRequest, PresentationSchedule, Certificate, Notification
+    ExtensionRequest, PresentationSchedule, Certificate, Notification,
+    WebsiteBranding, WebsiteTheme
 )
 from .serializers import (
     UserSerializer, MentorCreateSerializer, InternCreateSerializer,
     ProjectSerializer, ProjectAssignmentSerializer, ExtensionRequestSerializer,
-    PresentationScheduleSerializer, CertificateSerializer, NotificationSerializer
+    PresentationScheduleSerializer, CertificateSerializer, NotificationSerializer,
+    WebsiteBrandingSerializer, WebsiteThemeSerializer
 )
 from .services import send_notification_and_email, generate_certificate_pdf
 
@@ -727,3 +729,191 @@ class DeadlineReminderCheckView(APIView):
             notified_count += 1
 
         return Response({'status': 'ok', 'reminders_sent': notified_count})
+
+
+# --- Admin Website Branding & Dynamic Theme Customization Module ---
+
+def get_or_create_branding():
+    obj, _ = WebsiteBranding.objects.get_or_create(id=1)
+    return obj
+
+
+def get_or_create_published_theme():
+    obj = WebsiteTheme.objects.filter(is_active=True, is_draft=False).first()
+    if not obj:
+        obj = WebsiteTheme.objects.create(is_active=True, is_draft=False)
+    return obj
+
+
+class PublicWebsiteConfigView(APIView):
+    """Public endpoint returning only published branding and active published theme."""
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        branding = get_or_create_branding()
+        theme = get_or_create_published_theme()
+        return Response({
+            'branding': WebsiteBrandingSerializer(branding).data,
+            'theme': WebsiteThemeSerializer(theme).data,
+        })
+
+
+class AdminBrandingView(APIView):
+    permission_classes = [IsAdminUserRole]
+
+    def get(self, request):
+        return Response(WebsiteBrandingSerializer(get_or_create_branding()).data)
+
+    def put(self, request):
+        branding = get_or_create_branding()
+        serializer = WebsiteBrandingSerializer(branding, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save(updated_by=request.user)
+            return Response(serializer.data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class AdminBrandingUploadView(APIView):
+    permission_classes = [IsAdminUserRole]
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
+
+    ALLOWED_EXT = {'png', 'jpg', 'jpeg', 'svg', 'webp', 'ico'}
+    MAX_SIZE_BYTES = 5 * 1024 * 1024  # 5 MB
+
+    def post(self, request):
+        variant = request.data.get('variant', 'primary_logo')
+        valid_variants = {'primary_logo', 'dark_logo', 'light_logo', 'mobile_logo', 'favicon'}
+        if variant not in valid_variants:
+            return Response({'detail': 'Invalid logo variant.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        file_obj = request.FILES.get('file')
+        data_url = request.data.get('data_url') or request.data.get('file_url') or request.data.get('url')
+
+        branding = get_or_create_branding()
+
+        if file_obj:
+            ext = file_obj.name.rsplit('.', 1)[-1].lower() if '.' in file_obj.name else ''
+            if ext not in self.ALLOWED_EXT:
+                return Response(
+                    {'error': f'Unsupported file format .{ext}. Allowed: PNG, JPG, JPEG, SVG, WebP.'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            if file_obj.size > self.MAX_SIZE_BYTES:
+                return Response({'error': 'File exceeds 5 MB limit.'}, status=status.HTTP_400_BAD_REQUEST)
+
+            raw_head = file_obj.read(4096)
+            file_obj.seek(0)
+            if ext == 'svg':
+                text_sample = raw_head.decode('utf-8', errors='ignore').lower()
+                if '<script' in text_sample or 'onload=' in text_sample or 'javascript:' in text_sample:
+                    return Response({'error': 'Unsafe SVG script content rejected.'}, status=status.HTTP_400_BAD_REQUEST)
+
+            from django.core.files.storage import default_storage
+            import uuid
+            saved_path = default_storage.save(f"branding/{variant}_{uuid.uuid4().hex[:8]}.{ext}", file_obj)
+            setattr(branding, variant, f"/media/{saved_path}")
+        elif data_url:
+            lower_url = str(data_url).lower()
+            if '<script' in lower_url or 'javascript:' in lower_url or 'onload=' in lower_url:
+                return Response({'error': 'Unsafe SVG rejected.'}, status=status.HTTP_400_BAD_REQUEST)
+            if not any(t in lower_url for t in ['image/png', 'image/jpeg', 'image/jpg', 'image/svg', 'image/webp', '.png', '.svg', '.jpg', '.webp']):
+                return Response({'error': 'Unsupported image format.'}, status=status.HTTP_400_BAD_REQUEST)
+            setattr(branding, variant, data_url)
+        else:
+            return Response({'error': 'No image file provided.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if request.data.get('site_name'):
+            branding.site_name = request.data.get('site_name')
+        branding.updated_by = request.user
+        branding.save()
+        serialized = WebsiteBrandingSerializer(branding).data
+        return Response({
+            'status': 'uploaded',
+            'variant': variant,
+            'url': getattr(branding, variant),
+            'branding': serialized,
+            **serialized,
+        })
+
+
+class AdminBrandingLogoDeleteView(APIView):
+    permission_classes = [IsAdminUserRole]
+
+    def delete(self, request):
+        variant = request.data.get('variant') or request.query_params.get('variant') or 'all'
+        branding = get_or_create_branding()
+        valid_variants = {'primary_logo', 'dark_logo', 'light_logo', 'mobile_logo', 'favicon'}
+        if variant == 'all':
+            for v in valid_variants:
+                setattr(branding, v, '/beat-logo.png')
+            branding.site_name = 'Beat Internship Portal'
+        elif variant in valid_variants:
+            setattr(branding, variant, '/beat-logo.png')
+        else:
+            return Response({'error': 'Invalid logo variant.'}, status=status.HTTP_400_BAD_REQUEST)
+        branding.updated_by = request.user
+        branding.save()
+        serialized = WebsiteBrandingSerializer(branding).data
+        return Response({'status': 'reset', 'branding': serialized, **serialized})
+
+
+class AdminThemeView(APIView):
+    permission_classes = [IsAdminUserRole]
+
+    def get(self, request):
+        published = get_or_create_published_theme()
+        draft = WebsiteTheme.objects.filter(is_draft=True).order_by('-updated_at').first()
+        return Response({
+            'published': WebsiteThemeSerializer(published).data,
+            'draft': WebsiteThemeSerializer(draft).data if draft else None,
+        })
+
+    def put(self, request):
+        published = get_or_create_published_theme()
+        serializer = WebsiteThemeSerializer(published, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save(is_active=True, is_draft=False)
+            return Response(serializer.data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class AdminThemeDraftView(APIView):
+    permission_classes = [IsAdminUserRole]
+
+    def post(self, request):
+        draft = WebsiteTheme.objects.filter(is_draft=True).order_by('-updated_at').first()
+        if not draft:
+            draft = WebsiteTheme(is_draft=True, is_active=False)
+        serializer = WebsiteThemeSerializer(draft, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save(is_draft=True, is_active=False)
+            return Response({'status': 'draft_saved', 'draft': serializer.data, **serializer.data})
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class AdminThemePublishView(APIView):
+    permission_classes = [IsAdminUserRole]
+
+    def post(self, request):
+        published = get_or_create_published_theme()
+        payload = request.data
+        if not payload:
+            draft = WebsiteTheme.objects.filter(is_draft=True).order_by('-updated_at').first()
+            if draft:
+                payload = WebsiteThemeSerializer(draft).data
+        serializer = WebsiteThemeSerializer(published, data=payload, partial=True)
+        if serializer.is_valid():
+            serializer.save(is_active=True, is_draft=False)
+            WebsiteTheme.objects.filter(is_draft=True).delete()
+            return Response({'status': 'published', 'theme': serializer.data, **serializer.data})
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class AdminThemeResetView(APIView):
+    permission_classes = [IsAdminUserRole]
+
+    def post(self, request):
+        WebsiteTheme.objects.all().delete()
+        published = get_or_create_published_theme()
+        serialized = WebsiteThemeSerializer(published).data
+        return Response({'status': 'reset', 'theme': serialized, **serialized})

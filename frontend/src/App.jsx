@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, Outlet } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { ThemeProvider } from './context/ThemeContext';
 import ProtectedRoute from './components/ProtectedRoute';
 import Navbar from './components/Navbar';
 import Sidebar from './components/Sidebar';
@@ -34,6 +35,8 @@ import AdminStaff from './pages/admin/AdminStaff';
 import AdminGrants from './pages/admin/AdminGrants';
 import AdminTemplate from './pages/admin/AdminTemplate';
 import AdminLogs from './pages/admin/AdminLogs';
+import AdminBranding from './pages/admin/AdminBranding';
+import AdminTheme from './pages/admin/AdminTheme';
 
 const DashboardLayout = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -66,23 +69,28 @@ const RootRedirect = () => {
 
 function App() {
   return (
-    <AuthProvider>
-      <Router>
-        <Routes>
-          <Route path="/login" element={<Login />} />
-          <Route path="/" element={<RootRedirect />} />
+    <ThemeProvider>
+      <AuthProvider>
+        <Router>
+          <Routes>
+            <Route path="/login" element={<Login />} />
+            <Route path="/" element={<RootRedirect />} />
 
-          {/* Authenticated Dashboard Routes */}
-          <Route element={<ProtectedRoute />}>
-            <Route element={<DashboardLayout />}>
-              {/* Admin Module */}
-              <Route path="/admin" element={<AdminDashboard />} />
-              <Route path="/admin/dashboard" element={<AdminDashboard />} />
-              <Route path="/admin/staff" element={<AdminStaff />} />
-              <Route path="/admin/users" element={<AdminStaff />} />
-              <Route path="/admin/grants" element={<AdminGrants />} />
-              <Route path="/admin/template" element={<AdminTemplate />} />
-              <Route path="/admin/logs" element={<AdminLogs />} />
+            {/* Authenticated Dashboard Routes */}
+            <Route element={<ProtectedRoute />}>
+              <Route element={<DashboardLayout />}>
+                {/* Admin Module */}
+                <Route path="/admin" element={<AdminDashboard />} />
+                <Route path="/admin/dashboard" element={<AdminDashboard />} />
+                <Route path="/admin/staff" element={<AdminStaff />} />
+                <Route path="/admin/users" element={<AdminStaff />} />
+                <Route path="/admin/grants" element={<AdminGrants />} />
+                <Route path="/admin/template" element={<AdminTemplate />} />
+                <Route path="/admin/logs" element={<AdminLogs />} />
+                <Route path="/admin/branding" element={<AdminBranding />} />
+                <Route path="/admin/theme" element={<AdminTheme initialSection="presets" />} />
+                <Route path="/admin/typography" element={<AdminTheme initialSection="typography" />} />
+                <Route path="/admin/appearance" element={<AdminTheme initialSection="appearance" />} />
 
               {/* HR Module */}
               <Route path="/hr" element={<HRDashboard />} />
@@ -110,10 +118,11 @@ function App() {
             </Route>
           </Route>
 
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-      </Router>
-    </AuthProvider>
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </Router>
+      </AuthProvider>
+    </ThemeProvider>
   );
 }
 

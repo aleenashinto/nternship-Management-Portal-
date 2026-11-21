@@ -205,3 +205,83 @@ class InternshipPortalEndToEndTests(TestCase):
         self.assertEqual(cert.status, "APPROVED")
         self.assertIsNotNone(cert.certificate_number)
         self.assertTrue(bool(cert.certificate_file))
+
+    def test_website_branding_and_theme_lifecycle(self):
+        # 1. Public config endpoint accessible without authentication
+        pub_res = self.client.get("/api/public/website-config/")
+        self.assertEqual(pub_res.status_code, 200)
+        self.assertEqual(pub_res.data["branding"]["site_name"], "Beat Internship Portal")
+        self.assertEqual(pub_res.data["theme"]["theme_name"], "Default Professional")
+        self.assertEqual(pub_res.data["theme"]["primary_color"], "#2563EB")
+
+        # 2. Non-admin users (HR, Mentor, Intern) cannot access admin branding/theme APIs
+        self.client.force_authenticate(user=self.hr)
+        self.assertEqual(self.client.get("/api/admin/branding/").status_code, 403)
+        self.assertEqual(self.client.get("/api/admin/theme/").status_code, 403)
+
+        # 3. Admin saves a draft theme -> must NOT affect public website config
+        self.client.force_authenticate(user=self.admin)
+        draft_res = self.client.post(
+            "/api/admin/theme/draft/",
+            {
+                "theme_name": "Royal Purple",
+                "primary_color": "#7C3AED",
+                "secondary_color": "#6D28D9",
+                "font_family": "Poppins",
+            },
+            format="json",
+        )
+        self.assertEqual(draft_res.status_code, 200)
+        self.assertEqual(draft_res.data["draft"]["primary_color"], "#7C3AED")
+
+        pub_after_draft = self.client.get("/api/public/website-config/")
+        self.assertEqual(pub_after_draft.data["theme"]["primary_color"], "#2563EB")
+
+        # 4. Admin publishes the theme -> public website config updates immediately
+        publish_res = self.client.post(
+            "/api/admin/theme/publish/",
+            {
+                "theme_name": "Royal Purple",
+                "primary_color": "#7C3AED",
+                "secondary_color": "#6D28D9",
+                "font_family": "Poppins",
+            },
+            format="json",
+        )
+        self.assertEqual(publish_res.status_code, 200)
+        pub_after_publish = self.client.get("/api/public/website-config/")
+        self.assertEqual(pub_after_publish.data["theme"]["primary_color"], "#7C3AED")
+        self.assertEqual(pub_after_publish.data["theme"]["font_family"], "Poppins")
+
+        # 5. Admin attempts unsafe SVG upload containing <script> -> rejected with 400
+        unsafe_res = self.client.post(
+            "/api/admin/branding/upload/",
+            {
+                "variant": "primary_logo",
+                "data_url": "data:image/svg+xml,<svg><script>alert(1)</script></svg>",
+            },
+            format="json",
+        )
+        self.assertEqual(unsafe_res.status_code, 400)
+
+        # 6. Admin updates valid logo & site name
+        valid_res = self.client.post(
+            "/api/admin/branding/upload/",
+            {
+                "variant": "primary_logo",
+                "data_url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+            },
+            format="json",
+        )
+        self.assertEqual(valid_res.status_code, 200)
+        self.assertTrue(valid_res.data["branding"]["primary_logo"].startswith("data:image/png;base64,"))
+
+        # 7. Admin resets logo and theme to default
+        reset_logo = self.client.delete("/api/admin/branding/logo/", {"variant": "all"}, format="json")
+        self.assertEqual(reset_logo.status_code, 200)
+        self.assertEqual(reset_logo.data["branding"]["primary_logo"], "/beat-logo.png")
+
+        reset_theme = self.client.post("/api/admin/theme/reset/")
+        self.assertEqual(reset_theme.status_code, 200)
+        self.assertEqual(reset_theme.data["theme"]["primary_color"], "#2563EB")
+

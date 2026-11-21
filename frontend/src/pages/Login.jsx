@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { useTheme } from '../context/ThemeContext';
 import { GraduationCap, Shield, Award, Briefcase, KeyRound, AlertCircle } from 'lucide-react';
 
 const Login = () => {
@@ -9,6 +10,7 @@ const Login = () => {
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { login } = useAuth();
+  const { branding } = useTheme();
   const navigate = useNavigate();
 
   const handleSubmit = async (e) => {
@@ -41,9 +43,15 @@ const Login = () => {
         {/* Header */}
         <div className="bg-gradient-to-r from-blue-600 to-blue-800 px-8 py-8 text-white text-center">
           <div className="inline-flex items-center justify-center bg-white rounded-2xl px-5 py-2 mb-3 shadow-md">
-            <img src="/beat-logo.png" alt="Beat" className="h-10 w-auto object-contain" />
+            <img
+              src={branding?.primary_logo || '/beat-logo.png'}
+              alt={branding?.site_name || 'Beat'}
+              className="h-10 w-auto object-contain"
+            />
           </div>
-          <h1 className="text-2xl font-bold tracking-tight">Internship Portal</h1>
+          <h1 className="text-2xl font-bold tracking-tight">
+            {branding?.site_name || 'Internship Portal'}
+          </h1>
           <p className="text-blue-100 text-xs mt-1">Role-Based Internship Management System</p>
         </div>
 
