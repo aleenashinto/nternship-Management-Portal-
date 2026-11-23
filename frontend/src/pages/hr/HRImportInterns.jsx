@@ -551,15 +551,14 @@ const HRImportInterns = () => {
                   <th className="px-3 py-3">#</th>
                   <th className="px-3 py-3">Validation Status</th>
                   <th className="px-3 py-3">Full Name</th>
+                  <th className="px-3 py-3">Generated Username</th>
+                  <th className="px-3 py-3">Temp Password</th>
                   <th className="px-3 py-3">Email</th>
                   <th className="px-3 py-3">Phone</th>
-                  <th className="px-3 py-3">College</th>
-                  <th className="px-3 py-3">Course</th>
-                  <th className="px-3 py-3">Department</th>
-                  <th className="px-3 py-3">Internship Role</th>
-                  <th className="px-3 py-3">Start Date</th>
-                  <th className="px-3 py-3">End Date</th>
-                  <th className="px-3 py-3">Assigned Mentor</th>
+                  <th className="px-3 py-3">Course Name</th>
+                  <th className="px-3 py-3">Course Code</th>
+                  <th className="px-3 py-3">Batch</th>
+                  <th className="px-3 py-3">Joining Date</th>
                   <th className="px-3 py-3">Status</th>
                 </tr>
               </thead>
@@ -602,15 +601,18 @@ const HRImportInterns = () => {
                       )}
                     </td>
                     {renderCell(row, 'full_name', row.full_name)}
+                    <td className="px-3 py-2.5 whitespace-nowrap font-mono font-bold text-blue-700">
+                      {row.generated_username || row.username || '—'}
+                    </td>
+                    <td className="px-3 py-2.5 whitespace-nowrap font-mono font-semibold text-amber-800">
+                      {row.temporary_password || '—'}
+                    </td>
                     {renderCell(row, 'email', row.email)}
                     {renderCell(row, 'phone', row.phone)}
-                    {renderCell(row, 'college', row.college)}
-                    {renderCell(row, 'course', row.course)}
-                    {renderCell(row, 'department', row.department)}
-                    {renderCell(row, 'internship_role', row.internship_role)}
-                    {renderCell(row, 'start_date', row.start_date)}
-                    {renderCell(row, 'end_date', row.end_date)}
-                    {renderCell(row, 'assigned_mentor', row.assigned_mentor)}
+                    {renderCell(row, 'course', row.course_name || row.course)}
+                    {renderCell(row, 'course_code', row.course_code)}
+                    {renderCell(row, 'batch', row.batch || 'Batch 2026-A')}
+                    {renderCell(row, 'start_date', row.joining_date || row.start_date)}
                     {renderCell(row, 'status', row.status)}
                   </tr>
                 ))}

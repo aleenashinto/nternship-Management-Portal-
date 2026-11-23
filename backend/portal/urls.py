@@ -6,7 +6,7 @@ from rest_framework_simplejwt.views import (
 )
 
 from .views import (
-    CurrentUserProfileView,
+    PortalLoginView, ChangePasswordView, CurrentUserProfileView,
     HRDashboardView, HRMentorViewSet, HRInternViewSet, HRCertificatesViewSet,
     HRDepartmentViewSet, HRProgramViewSet,
     HRInternImportPreviewView, HRInternImportValidateView,
@@ -49,9 +49,10 @@ urlpatterns = [
     path('docs/', SwaggerDocsView.as_view(), name='swagger-docs'),
 
     # Auth endpoints
-    path('auth/login/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
+    path('auth/login/', PortalLoginView.as_view(), name='token_obtain_pair'),
     path('auth/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('auth/me/', CurrentUserProfileView.as_view(), name='current_user'),
+    path('auth/change-password/', ChangePasswordView.as_view(), name='change_password'),
 
     # HR Views
     path('hr/dashboard/', HRDashboardView.as_view(), name='hr-dashboard'),

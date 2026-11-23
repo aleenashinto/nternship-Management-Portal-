@@ -8,6 +8,7 @@ import Sidebar from './components/Sidebar';
 
 // Pages
 import Login from './pages/Login';
+import ChangePassword from './pages/ChangePassword';
 
 // HR Pages
 import HRDashboard from './pages/hr/HRDashboard';
@@ -78,6 +79,11 @@ function App() {
           <Routes>
             <Route path="/login" element={<Login />} />
             <Route path="/" element={<RootRedirect />} />
+
+            {/* First-Login Mandatory Password Change */}
+            <Route element={<ProtectedRoute />}>
+              <Route path="/change-password" element={<ChangePassword />} />
+            </Route>
 
             {/* Authenticated Dashboard Routes */}
             <Route element={<ProtectedRoute />}>

@@ -145,13 +145,13 @@ const HRDashboard = () => {
             <UserCheck className="w-4 h-4" />
             <span>Create Mentor</span>
           </button>
-          <button
-            onClick={() => setIsInternModalOpen(true)}
+          <Link
+            to="/hr/interns/add"
             className="inline-flex items-center space-x-2 px-4 py-2.5 rounded-xl text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 transition-colors shadow-sm shadow-blue-500/20"
           >
             <PlusCircle className="w-4 h-4" />
-            <span>Register Intern</span>
-          </button>
+            <span>Add Intern</span>
+          </Link>
         </div>
       </div>
 

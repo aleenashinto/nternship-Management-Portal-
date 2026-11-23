@@ -7,6 +7,10 @@ from .models import (
     WebsiteBranding, WebsiteTheme, InternDepartment, InternshipProgram,
     ImportHistory, InternStatusChoices
 )
+from .intern_import_service import (
+    generate_unique_intern_username,
+    generate_temporary_password,
+)
 
 
 class InternDepartmentSerializer(serializers.ModelSerializer):
@@ -61,6 +65,11 @@ class UserSerializer(serializers.ModelSerializer):
     assigned_mentor_name = serializers.SerializerMethodField()
     hr_contact_name = serializers.SerializerMethodField()
     full_name = serializers.CharField(required=False, allow_blank=True)
+    fullName = serializers.CharField(source='full_name', required=False, allow_blank=True, write_only=True)
+    courseName = serializers.CharField(source='course_name', required=False, allow_blank=True)
+    courseCode = serializers.CharField(source='course_code', required=False, allow_blank=True)
+    joiningDate = serializers.DateField(source='joining_date', required=False, allow_null=True)
+    mustChangePassword = serializers.BooleanField(source='must_change_password', read_only=True)
     status = serializers.CharField(source='intern_status', required=False)
     department_id = serializers.PrimaryKeyRelatedField(
         source='department_ref', queryset=InternDepartment.objects.all(),
@@ -76,13 +85,18 @@ class UserSerializer(serializers.ModelSerializer):
         required=False, allow_null=True
     )
     created_at = serializers.DateTimeField(source='date_joined', read_only=True)
+    createdAt = serializers.DateTimeField(source='date_joined', read_only=True)
+    updatedAt = serializers.DateTimeField(source='updated_at', read_only=True)
     password = serializers.CharField(write_only=True, required=False, allow_blank=True)
 
     class Meta:
         model = User
         fields = [
-            'id', 'intern_code', 'username', 'password', 'email', 'first_name', 'last_name', 'full_name',
-            'role', 'phone', 'phone2', 'gender', 'college', 'course',
+            'id', 'intern_code', 'username', 'password', 'email',
+            'first_name', 'last_name', 'full_name', 'fullName',
+            'role', 'phone', 'phone2', 'gender', 'college',
+            'course', 'course_name', 'courseName', 'course_code', 'courseCode',
+            'batch', 'joining_date', 'joiningDate',
             'department', 'department_id', 'department_name',
             'program', 'program_name', 'internship_role',
             'start_date', 'end_date', 'duration', 'internship_duration',
@@ -91,9 +105,11 @@ class UserSerializer(serializers.ModelSerializer):
             'assigned_mentor', 'mentor_id', 'assigned_mentor_name', 'assigned_intern_count',
             'hr_contact', 'hr_contact_id', 'hr_contact_name',
             'status', 'intern_status', 'profile_photo',
-            'is_active_intern', 'created_by', 'date_joined', 'created_at', 'updated_at'
+            'must_change_password', 'mustChangePassword',
+            'is_active_intern', 'created_by',
+            'date_joined', 'created_at', 'createdAt', 'updated_at', 'updatedAt'
         ]
-        read_only_fields = ['id', 'role', 'date_joined', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'role', 'date_joined', 'created_at', 'createdAt', 'updated_at', 'updatedAt', 'mustChangePassword']
 
     def get_department_name(self, obj):
         if obj.department_ref:
@@ -103,8 +119,18 @@ class UserSerializer(serializers.ModelSerializer):
     def to_representation(self, instance):
         data = super().to_representation(instance)
         name = f"{instance.first_name} {instance.last_name}".strip()
-        data['full_name'] = name if name else instance.username
+        full = name if name else instance.username
+        data['full_name'] = full
+        data['fullName'] = full
         data['status'] = instance.intern_status or 'Active'
+        course_val = instance.course_name or instance.course or instance.education_qualification or ''
+        data['course'] = course_val
+        data['course_name'] = course_val
+        data['courseName'] = course_val
+        data['courseCode'] = instance.course_code or ''
+        data['joiningDate'] = (instance.joining_date or instance.start_date).isoformat() if (instance.joining_date or instance.start_date) else None
+        data['joining_date'] = data['joiningDate']
+        data['mustChangePassword'] = bool(instance.must_change_password)
         if instance.department_ref and not data.get('department'):
             data['department'] = instance.department_ref.name
         if not data.get('intern_code') and instance.role == UserRole.INTERN:
@@ -114,7 +140,7 @@ class UserSerializer(serializers.ModelSerializer):
     def update(self, instance, validated_data):
         password = validated_data.pop('password', None)
         full_name = validated_data.pop('full_name', None)
-        if full_name and not validated_data.get('first_name'):
+        if full_name:
             parts = full_name.strip().split(' ', 1)
             validated_data['first_name'] = parts[0]
             validated_data['last_name'] = parts[1] if len(parts) > 1 else ''
@@ -162,6 +188,10 @@ class InternCreateSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, required=False, allow_blank=True)
     username = serializers.CharField(required=False, allow_blank=True)
     full_name = serializers.CharField(required=False, allow_blank=True)
+    fullName = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    courseName = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    courseCode = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    joiningDate = serializers.DateField(write_only=True, required=False, allow_null=True)
     status = serializers.CharField(source='intern_status', required=False, default='Active')
     department_id = serializers.PrimaryKeyRelatedField(
         source='department_ref', queryset=InternDepartment.objects.all(),
@@ -180,37 +210,62 @@ class InternCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = [
-            'id', 'intern_code', 'username', 'password', 'first_name', 'last_name', 'full_name',
-            'email', 'phone', 'phone2', 'gender', 'college', 'course',
+            'id', 'intern_code', 'username', 'password',
+            'first_name', 'last_name', 'full_name', 'fullName',
+            'email', 'phone', 'phone2', 'gender', 'college',
+            'course', 'course_name', 'courseName', 'course_code', 'courseCode',
+            'batch', 'joining_date', 'joiningDate',
             'department', 'department_id', 'department_name',
             'program', 'program_name', 'internship_role',
             'start_date', 'end_date', 'duration', 'internship_duration',
             'address', 'education_qualification', 'source',
             'assigned_mentor', 'mentor_id', 'hr_contact', 'hr_contact_id',
-            'status', 'intern_status', 'profile_photo'
+            'status', 'intern_status', 'profile_photo', 'must_change_password'
         ]
 
     def validate(self, attrs):
-        full_name = attrs.pop('full_name', '').strip()
+        full_name = (attrs.pop('full_name', '') or attrs.pop('fullName', '')).strip()
+        course_name_alias = attrs.pop('courseName', '').strip()
+        course_code_alias = attrs.pop('courseCode', '').strip()
+        joining_date_alias = attrs.pop('joiningDate', None)
         dept_name = attrs.pop('department_name', '').strip()
+
         if dept_name and not attrs.get('department'):
             attrs['department'] = dept_name
+        if course_name_alias and not attrs.get('course_name'):
+            attrs['course_name'] = course_name_alias
+        if attrs.get('course_name') and not attrs.get('course'):
+            attrs['course'] = attrs['course_name']
+        elif attrs.get('course') and not attrs.get('course_name'):
+            attrs['course_name'] = attrs['course']
+        if course_code_alias and not attrs.get('course_code'):
+            attrs['course_code'] = course_code_alias
+        if joining_date_alias and not attrs.get('joining_date'):
+            attrs['joining_date'] = joining_date_alias
+        if attrs.get('joining_date') and not attrs.get('start_date'):
+            attrs['start_date'] = attrs['joining_date']
+
         if full_name and not attrs.get('first_name'):
             parts = full_name.split(' ', 1)
             attrs['first_name'] = parts[0]
             attrs['last_name'] = parts[1] if len(parts) > 1 else ''
+        elif not full_name:
+            full_name = f"{attrs.get('first_name', '')} {attrs.get('last_name', '')}".strip()
 
         email = (attrs.get('email') or '').strip()
+        if email and User.objects.filter(email__iexact=email).exists():
+            raise serializers.ValidationError({'email': 'An intern account with this email address already exists.'})
+
         username = (attrs.get('username') or '').strip()
         if not username:
-            base = re.sub(r'[^a-zA-Z0-9_]', '_', (email.split('@')[0] if email else full_name or 'intern').lower())
-            base = re.sub(r'_+', '_', base).strip('_') or 'intern'
-            candidate = base
-            suffix = 1
-            while User.objects.filter(username__iexact=candidate).exists():
-                suffix += 1
-                candidate = f"{base}_{suffix}"
-            attrs['username'] = candidate
+            # Automatically generate firstname.lastname username
+            attrs['username'] = generate_unique_intern_username(full_name or email.split('@')[0] or 'intern')
+        else:
+            if User.objects.filter(username__iexact=username).exists():
+                attrs['username'] = generate_unique_intern_username(full_name or username)
+
+        # Store full_name for password generation in create()
+        attrs['_resolved_full_name'] = full_name or attrs['username']
 
         start_date = attrs.get('start_date')
         end_date = attrs.get('end_date')
@@ -220,16 +275,32 @@ class InternCreateSerializer(serializers.ModelSerializer):
         return attrs
 
     def create(self, validated_data):
+        resolved_full_name = validated_data.pop('_resolved_full_name', '')
         password = validated_data.pop('password', None)
+        course_code = validated_data.get('course_code') or ''
+        auto_generated = False
+
         if not password:
-            password = 'InternPassword@123'
+            auto_generated = True
+            if course_code:
+                password = generate_temporary_password(resolved_full_name, course_code)
+            else:
+                password = generate_temporary_password(resolved_full_name, 'INT01')
+
+        if 'must_change_password' not in validated_data:
+            validated_data['must_change_password'] = True
+
+        status_val = validated_data.get('intern_status', 'Active')
+        is_active_flag = status_val not in ['Inactive', 'Terminated', 'Completed']
+
         intern = User(
             role=UserRole.INTERN,
-            is_active_intern=True,
+            is_active_intern=is_active_flag,
             **validated_data
         )
         intern.set_password(password)
         intern.save()
+        intern._generated_temporary_password = password if auto_generated else password
         return intern
 
 

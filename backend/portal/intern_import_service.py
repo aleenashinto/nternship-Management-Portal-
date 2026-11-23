@@ -14,10 +14,11 @@ MAX_IMPORT_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
 ALLOWED_IMPORT_EXTENSIONS = {'csv', 'xlsx', 'xls'}
 
 VALID_STATUSES = {
+    'active': 'Active',
+    'inactive': 'Inactive',
     'applied': 'Applied',
     'selected': 'Selected',
     'onboarding': 'Onboarding',
-    'active': 'Active',
     'completed': 'Completed',
     'terminated': 'Terminated',
 }
@@ -25,14 +26,17 @@ VALID_STATUSES = {
 SYSTEM_FIELDS = [
     {'key': 'full_name', 'label': 'Full Name', 'required': True},
     {'key': 'email', 'label': 'Email Address', 'required': True},
-    {'key': 'phone', 'label': 'Phone Number', 'required': True},
+    {'key': 'phone', 'label': 'Phone Number', 'required': False},
+    {'key': 'course', 'label': 'Course Name', 'required': False},
+    {'key': 'course_code', 'label': 'Course Code', 'required': False},
+    {'key': 'batch', 'label': 'Batch', 'required': False},
     {'key': 'gender', 'label': 'Gender', 'required': False},
     {'key': 'college', 'label': 'College / University', 'required': False},
-    {'key': 'course', 'label': 'Course / Degree', 'required': False},
     {'key': 'department', 'label': 'Department', 'required': False},
     {'key': 'internship_role', 'label': 'Internship Role', 'required': False},
-    {'key': 'start_date', 'label': 'Internship Start Date', 'required': False},
+    {'key': 'start_date', 'label': 'Joining / Start Date', 'required': False},
     {'key': 'end_date', 'label': 'Internship End Date', 'required': False},
+    {'key': 'duration', 'label': 'Internship Duration', 'required': False},
     {'key': 'assigned_mentor', 'label': 'Assigned Mentor', 'required': False},
     {'key': 'hr_contact', 'label': 'HR Contact', 'required': False},
     {'key': 'status', 'label': 'Status', 'required': False},
@@ -52,14 +56,21 @@ COLUMN_ALIASES = {
         'phone', 'phone number', 'phone_number', 'mobile', 'mobile number',
         'contact', 'contact number', 'telephone', 'cell'
     ],
+    'course': [
+        'course', 'course name', 'course_name', 'coursename', 'degree',
+        'course / degree', 'qualification', 'education', 'education_qualification',
+        'major', 'program', 'branch'
+    ],
+    'course_code': [
+        'course_code', 'course code', 'coursecode', 'code', 'program code', 'track code'
+    ],
+    'batch': [
+        'batch', 'batch name', 'batch_code', 'cohort', 'intake', 'session'
+    ],
     'gender': ['gender', 'sex'],
     'college': [
         'college', 'university', 'college / university', 'institution',
         'institute', 'school', 'campus'
-    ],
-    'course': [
-        'course', 'degree', 'course / degree', 'qualification',
-        'education', 'education_qualification', 'major', 'program', 'branch'
     ],
     'department': [
         'department', 'dept', 'department_name', 'division', 'domain', 'stream', 'team'
@@ -69,12 +80,15 @@ COLUMN_ALIASES = {
         'job title', 'title', 'track'
     ],
     'start_date': [
-        'start_date', 'start date', 'startdate', 'joining date',
-        'internship start date', 'from date', 'begin date'
+        'start_date', 'start date', 'startdate', 'joining date', 'joining_date',
+        'joiningdate', 'internship start date', 'from date', 'begin date'
     ],
     'end_date': [
         'end_date', 'end date', 'enddate', 'completion date',
         'internship end date', 'to date', 'finish date'
+    ],
+    'duration': [
+        'duration', 'internship_duration', 'internship duration', 'period', 'tenure'
     ],
     'assigned_mentor': [
         'assigned_mentor', 'assigned mentor', 'mentor', 'mentor name',
@@ -92,6 +106,69 @@ COLUMN_ALIASES = {
 }
 
 EMAIL_REGEX = re.compile(r'^[^\s@]+@[^\s@]+\.[^\s@]+$')
+
+
+def generate_intern_base_username(full_name):
+    """
+    Generate base username in firstname.lastname format:
+    - Convert all characters to lowercase.
+    - Remove special characters.
+    - Remove unnecessary spaces and replace spaces between names with dots.
+    """
+    raw = str(full_name or '').strip().lower()
+    # Keep only lowercase letters, digits, and whitespace
+    cleaned = re.sub(r'[^a-z0-9\s]', '', raw)
+    tokens = [t for t in cleaned.split() if t]
+    if not tokens:
+        return 'intern.user'
+    return '.'.join(tokens)
+
+
+def generate_unique_intern_username(full_name, taken_usernames_lower=None, exclude_user_id=None):
+    """
+    Ensure every username is unique.
+    If aleena.mathew exists, append sequential numbers: aleena.mathew1, aleena.mathew2, ...
+    """
+    base = generate_intern_base_username(full_name)
+    if taken_usernames_lower is None:
+        qs = User.objects.all()
+        if exclude_user_id:
+            qs = qs.exclude(id=exclude_user_id)
+        taken_usernames_lower = {u.lower() for u in qs.values_list('username', flat=True) if u}
+
+    if base not in taken_usernames_lower:
+        taken_usernames_lower.add(base)
+        return base
+
+    seq = 1
+    while True:
+        candidate = f"{base}{seq}"
+        if candidate not in taken_usernames_lower:
+            taken_usernames_lower.add(candidate)
+            return candidate
+        seq += 1
+
+
+def generate_temporary_password(full_name, course_code):
+    """
+    Generate temporary initial password using:
+    Password = Intern Name (spaces & special characters removed) + Course Code
+    Example: Aleena Mathew + PYFS01 -> AleenaMathewPYFS01
+    """
+    raw_name = str(full_name or '').strip()
+    # Normalize word casing if user typed all lowercase or all uppercase, otherwise preserve word casing
+    words = [re.sub(r'[^a-zA-Z0-9]', '', w) for w in raw_name.split() if w]
+    formatted_words = []
+    for w in words:
+        if not w:
+            continue
+        if w.islower() or w.isupper():
+            formatted_words.append(w.capitalize())
+        else:
+            formatted_words.append(w[0].upper() + w[1:])
+    name_part = ''.join(formatted_words) or 'Intern'
+    code_part = re.sub(r'[^a-zA-Z0-9]', '', str(course_code or '').strip()) or 'INT01'
+    return f"{name_part}{code_part}"
 
 
 def ensure_default_departments_and_programs():
@@ -367,6 +444,9 @@ def validate_import_rows(raw_rows, column_mapping=None):
         e.lower(): uid
         for e, uid in User.objects.exclude(email='').values_list('email', 'id')
     }
+    taken_usernames = {
+        u.lower() for u in User.objects.values_list('username', flat=True) if u
+    }
 
     seen_emails_in_file = {}
     validated_rows = []
@@ -393,11 +473,14 @@ def validate_import_rows(raw_rows, column_mapping=None):
         phone = get_val('phone')
         gender = get_val('gender')
         college = get_val('college')
-        course = get_val('course')
+        course = get_val('course') or get_val('course_name')
+        course_code = get_val('course_code')
+        batch = get_val('batch')
         department_raw = get_val('department')
         internship_role = get_val('internship_role') or 'Data Analytics Intern'
-        start_date_raw = get_val('start_date')
+        start_date_raw = get_val('start_date') or get_val('joining_date')
         end_date_raw = get_val('end_date')
+        duration_raw = get_val('duration')
         mentor_raw = get_val('assigned_mentor')
         hr_raw = get_val('hr_contact')
         status_raw = get_val('status') or 'Active'
@@ -423,10 +506,23 @@ def validate_import_rows(raw_rows, column_mapping=None):
             cell_errors['email'] = f"Invalid email format '{email}'."
             error_reasons.append(f"Invalid email format ({email})")
 
-        if not phone:
-            cell_errors['phone'] = 'Phone Number is required.'
-            error_reasons.append('Missing Phone Number')
+        # If Course Code column is mapped or provided in the file, require non-empty course & course_code
+        if (mapping.get('course_code') or 'course_code' in raw) and not course_code:
+            cell_errors['course_code'] = 'Course Code is required.'
+            error_reasons.append('Missing Course Code')
             has_missing_required = True
+
+        if (mapping.get('course') and (mapping.get('course_code') or 'course_code' in raw)) and not course:
+            cell_errors['course'] = 'Course Name is required.'
+            error_reasons.append('Missing Course Name')
+            has_missing_required = True
+
+        if not phone:
+            # If Phone column is present and empty when no course_code is provided, flag missing phone
+            if not course_code:
+                cell_errors['phone'] = 'Phone Number is required.'
+                error_reasons.append('Missing Phone Number')
+                has_missing_required = True
         else:
             ok_phone, phone_msg = validate_phone(phone)
             if not ok_phone:
@@ -541,19 +637,33 @@ def validate_import_rows(raw_rows, column_mapping=None):
         elif is_db_duplicate:
             row_status = 'DUPLICATE_EXISTING'
 
+        effective_course_code = course_code or (
+            ''.join(w[0].upper() for w in (course or 'Intern').split() if w and w[0].isalnum())[:4] + '01'
+        )
+        generated_username = generate_unique_intern_username(full_name or email, taken_usernames)
+        temporary_password = generate_temporary_password(full_name or 'Intern', effective_course_code)
+
         validated_rows.append({
             'row_number': row_num,
             'full_name': full_name,
+            'username': generated_username,
+            'generated_username': generated_username,
+            'temporary_password': temporary_password,
             'email': email,
             'phone': phone,
             'gender': gender,
             'college': college,
             'course': course,
+            'course_name': course,
+            'course_code': effective_course_code if course_code else course_code,
+            'batch': batch,
             'department': resolved_dept_name,
             'department_id': resolved_dept_id,
             'internship_role': internship_role,
             'start_date': parsed_start.isoformat() if parsed_start else start_date_raw,
+            'joining_date': parsed_start.isoformat() if parsed_start else start_date_raw,
             'end_date': parsed_end.isoformat() if parsed_end else end_date_raw,
+            'duration': duration_raw,
             'assigned_mentor': resolved_mentor_name or mentor_raw,
             'mentor_id': resolved_mentor_id,
             'hr_contact_id': resolved_hr_id,
@@ -687,7 +797,15 @@ def execute_import_confirm(
                             existing_user.college = r['college']
                         if r['course']:
                             existing_user.course = r['course']
+                            existing_user.course_name = r['course']
                             existing_user.education_qualification = r['course']
+                        if r.get('course_code'):
+                            existing_user.course_code = r['course_code']
+                        if r.get('batch'):
+                            existing_user.batch = r['batch']
+                        if r.get('duration'):
+                            existing_user.duration = r['duration']
+                            existing_user.internship_duration = r['duration']
                         if r['department_id']:
                             existing_user.department_ref_id = r['department_id']
                             existing_user.department = r['department']
@@ -697,6 +815,7 @@ def execute_import_confirm(
                             existing_user.internship_role = r['internship_role']
                         if start_dt:
                             existing_user.start_date = start_dt
+                            existing_user.joining_date = start_dt
                         if end_dt:
                             existing_user.end_date = end_dt
                         if r['mentor_id']:
@@ -713,14 +832,15 @@ def execute_import_confirm(
                         skipped_count += 1
                     continue
 
-                # Generate unique username
-                base = re.sub(r'[^a-zA-Z0-9_]', '_', email_lower.split('@')[0])
-                base = re.sub(r'_+', '_', base).strip('_') or 'intern'
-                candidate = base
-                suffix = 1
-                while User.objects.filter(username__iexact=candidate).exists():
-                    suffix += 1
-                    candidate = f"{base}_{suffix}"
+                # Generate unique firstname.lastname username & temporary password
+                candidate = generate_unique_intern_username(r['full_name'])
+                eff_code = r.get('course_code') or 'INT01'
+                temp_pwd = generate_temporary_password(r['full_name'], eff_code)
+                row_hashed_pwd = (
+                    make_password(temp_pwd)
+                    if r.get('course_code')
+                    else default_hashed_password
+                )
 
                 new_intern = User(
                     username=candidate,
@@ -732,19 +852,26 @@ def execute_import_confirm(
                     gender=r['gender'],
                     college=r['college'],
                     course=r['course'],
+                    course_name=r['course'],
+                    course_code=r.get('course_code') or '',
+                    batch=r.get('batch') or '',
                     education_qualification=r['course'],
                     department_ref_id=r['department_id'],
                     department=r['department'] or 'Data Analytics',
                     internship_role=r['internship_role'] or 'Data Analytics Intern',
                     start_date=start_dt,
+                    joining_date=start_dt,
                     end_date=end_dt,
+                    duration=r.get('duration') or '',
+                    internship_duration=r.get('duration') or '',
                     assigned_mentor_id=r['mentor_id'],
                     hr_contact_id=r['hr_contact_id'] or (imported_by.id if getattr(imported_by, 'is_authenticated', False) else None),
                     intern_status=r['status'] or InternStatusChoices.ACTIVE,
                     address=r['address'],
                     source='Bulk Import',
+                    must_change_password=True,
                     created_by=imported_by if getattr(imported_by, 'is_authenticated', False) else None,
-                    password=default_hashed_password,
+                    password=row_hashed_pwd,
                 )
                 new_intern.save()
                 successful_count += 1

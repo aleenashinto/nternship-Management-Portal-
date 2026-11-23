@@ -6,6 +6,9 @@ import {
   validateInternRows,
   calculateDuration,
   sanitizeSpreadsheetCell,
+  generateUniqueInternUsername,
+  generateTemporaryPassword,
+  hashCredentialSync,
 } from '../utils/internSpreadsheet';
 
 const INITIAL_USERS = {
@@ -53,16 +56,25 @@ const INITIAL_USERS = {
     first_name: 'Emma',
     last_name: 'Watson',
     full_name: 'Emma Watson',
+    fullName: 'Emma Watson',
     role: 'INTERN',
     phone: '+1 (555) 567-8901',
     gender: 'Female',
     college: 'Harvard University',
     course: 'M.S. in Data Analytics',
+    course_name: 'M.S. in Data Analytics',
+    courseName: 'M.S. in Data Analytics',
+    course_code: 'DA01',
+    courseCode: 'DA01',
+    batch: 'Batch 2026-A',
+    joining_date: '2026-06-01',
+    joiningDate: '2026-06-01',
     department: 'Data Analytics',
     department_name: 'Data Analytics',
     internship_role: 'Data Analytics Intern',
     start_date: '2026-06-01',
     end_date: '2026-08-31',
+    duration: '13 weeks (91 days)',
     internship_duration: '13 weeks (91 days)',
     address: '12 Ocean Drive, Cambridge, MA',
     education_qualification: 'M.S. in Data Analytics',
@@ -73,6 +85,8 @@ const INITIAL_USERS = {
     hr_contact_name: 'Sarah Connor',
     status: 'Active',
     intern_status: 'Active',
+    must_change_password: false,
+    mustChangePassword: false,
     is_active_intern: true,
   },
   intern_john: {
@@ -83,20 +97,29 @@ const INITIAL_USERS = {
     first_name: 'John',
     last_name: 'Doe',
     full_name: 'John Doe',
+    fullName: 'John Doe',
     role: 'INTERN',
     phone: '+1 (555) 456-7890',
     phone2: '+1 (555) 456-7891',
     gender: 'Male',
     college: 'Stanford University',
-    course: 'B.S. in Computer Science',
+    course: 'Python Full Stack Development',
+    course_name: 'Python Full Stack Development',
+    courseName: 'Python Full Stack Development',
+    course_code: 'PYFS01',
+    courseCode: 'PYFS01',
+    batch: 'Batch 2026-A',
+    joining_date: '2026-06-15',
+    joiningDate: '2026-06-15',
     department: 'Software Engineering',
     department_name: 'Software Engineering',
     internship_role: 'Full-Stack Developer Intern',
     start_date: '2026-06-15',
     end_date: '2026-09-15',
+    duration: '13 weeks (92 days)',
     internship_duration: '13 weeks (92 days)',
     address: '742 Evergreen Terrace, Springfield',
-    education_qualification: 'B.S. in Computer Science',
+    education_qualification: 'Python Full Stack Development',
     source: 'Direct',
     assigned_mentor: 3,
     assigned_mentor_name: 'David Miller',
@@ -104,6 +127,8 @@ const INITIAL_USERS = {
     hr_contact_name: 'Sarah Connor',
     status: 'Active',
     intern_status: 'Active',
+    must_change_password: false,
+    mustChangePassword: false,
     is_active_intern: true,
   },
   intern_alex: {
@@ -114,26 +139,37 @@ const INITIAL_USERS = {
     first_name: 'Alex',
     last_name: 'Smith',
     full_name: 'Alex Smith',
+    fullName: 'Alex Smith',
     role: 'INTERN',
     phone: '+1 (555) 678-9012',
     gender: 'Male',
     college: 'UC Berkeley',
-    course: 'B.Tech in Information Technology',
+    course: 'Applied AI & Machine Learning',
+    course_name: 'Applied AI & Machine Learning',
+    courseName: 'Applied AI & Machine Learning',
+    course_code: 'AIML01',
+    courseCode: 'AIML01',
+    batch: 'Batch 2026-B',
+    joining_date: '2026-07-01',
+    joiningDate: '2026-07-01',
     department: 'Artificial Intelligence & ML',
     department_name: 'Artificial Intelligence & ML',
     internship_role: 'AI & ML Intern',
     start_date: '2026-07-01',
     end_date: '2026-09-30',
+    duration: '13 weeks (91 days)',
     internship_duration: '13 weeks (91 days)',
     address: '89 Silicon Blvd, San Jose, CA',
-    education_qualification: 'B.Tech in Information Technology',
+    education_qualification: 'Applied AI & Machine Learning',
     source: 'Referral',
     assigned_mentor: null,
     assigned_mentor_name: null,
     hr_contact: 2,
     hr_contact_name: 'Sarah Connor',
-    status: 'Onboarding',
-    intern_status: 'Onboarding',
+    status: 'Active',
+    intern_status: 'Active',
+    must_change_password: false,
+    mustChangePassword: false,
     is_active_intern: true,
   },
 };
@@ -357,9 +393,88 @@ export const handleMockRequest = async (url, method = 'get', data = null) => {
   // 1. Auth Login
   if (cleanUrl === '/auth/login' && method.toLowerCase() === 'post') {
     const rawUser = parsedData?.username || '';
+    const rawPass = parsedData?.password || '';
     const trimmedUser = rawUser.trim().toLowerCase();
 
-    // Check predefined users first (also accept @beat.local seeded usernames)
+    // Check rate limiting in localStorage
+    const attemptsMap = getStore('login_attempts', {});
+    const userAttempt = attemptsMap[trimmedUser] || { count: 0, lockedUntil: 0 };
+    if (userAttempt.lockedUntil && Date.now() < userAttempt.lockedUntil) {
+      throw {
+        response: {
+          status: 429,
+          data: { detail: 'Too many failed login attempts. Please wait 5 minutes before trying again.' },
+        },
+      };
+    }
+
+    // Check dynamically registered/imported interns first
+    const storedInterns = getStore('interns', Object.values(INITIAL_USERS).filter(u => u.role === 'INTERN'));
+    const matchedIntern = storedInterns.find(
+      (i) =>
+        (i.username || '').toLowerCase() === trimmedUser ||
+        (i.email || '').toLowerCase() === trimmedUser
+    );
+
+    if (matchedIntern) {
+      const statusLower = (matchedIntern.status || matchedIntern.intern_status || 'Active').toLowerCase();
+      if (statusLower === 'inactive' || statusLower === 'terminated' || matchedIntern.is_active_intern === false) {
+        throw {
+          response: {
+            status: 403,
+            data: { detail: 'Your intern account is currently inactive. Please contact HR.' },
+          },
+        };
+      }
+      if (matchedIntern.password_hash) {
+        const expectedHash = hashCredentialSync(rawPass);
+        if (expectedHash !== matchedIntern.password_hash) {
+          userAttempt.count += 1;
+          if (userAttempt.count >= 5) {
+            userAttempt.lockedUntil = Date.now() + 5 * 60 * 1000;
+          }
+          attemptsMap[trimmedUser] = userAttempt;
+          setStore('login_attempts', attemptsMap);
+          throw {
+            response: {
+              status: 401,
+              data: { detail: 'Invalid username or password. Please try again.' },
+            },
+          };
+        }
+      }
+      delete attemptsMap[trimmedUser];
+      setStore('login_attempts', attemptsMap);
+      const { password_hash, ...safeIntern } = matchedIntern;
+      localStorage.setItem('portal_user', JSON.stringify(safeIntern));
+      return {
+        access: `mock_jwt_access_${trimmedUser}`,
+        refresh: `mock_jwt_refresh_${trimmedUser}`,
+        user: safeIntern,
+        must_change_password: Boolean(safeIntern.must_change_password),
+        mustChangePassword: Boolean(safeIntern.must_change_password),
+      };
+    }
+
+    // Check dynamically created mentors
+    const storedMentors = getStore('mentors', Object.values(INITIAL_USERS).filter(u => u.role === 'MENTOR'));
+    const matchedMentor = storedMentors.find(
+      (m) =>
+        (m.username || '').toLowerCase() === trimmedUser ||
+        (m.email || '').toLowerCase() === trimmedUser
+    );
+    if (matchedMentor) {
+      const { password_hash, ...safeMentor } = matchedMentor;
+      localStorage.setItem('portal_user', JSON.stringify(safeMentor));
+      return {
+        access: `mock_jwt_access_${trimmedUser}`,
+        refresh: `mock_jwt_refresh_${trimmedUser}`,
+        user: safeMentor,
+        must_change_password: false,
+      };
+    }
+
+    // Check predefined users (also accept @beat.local seeded usernames)
     const beatAlias = {
       'admin@beat.local': 'admin',
       'hr@beat.local': 'hr_manager',
@@ -376,14 +491,15 @@ export const handleMockRequest = async (url, method = 'get', data = null) => {
         access: `mock_jwt_access_${trimmedUser}`,
         refresh: `mock_jwt_refresh_${trimmedUser}`,
         user: u,
+        must_change_password: false,
       };
     }
 
-    // Dynamic role deduction so any username can test any role:
-    let role = 'HR';
-    if (trimmedUser.includes('mentor') || trimmedUser.includes('lead')) role = 'MENTOR';
-    else if (trimmedUser.includes('intern') || trimmedUser.includes('student') || trimmedUser.includes('emma') || trimmedUser.includes('john')) role = 'INTERN';
-    else if (trimmedUser.includes('admin')) role = 'ADMIN';
+    // Dynamic role deduction for demo logins
+    let role = 'INTERN';
+    if (trimmedUser === 'hr' || trimmedUser.startsWith('hr_')) role = 'HR';
+    else if (trimmedUser.includes('mentor') || trimmedUser.includes('lead')) role = 'MENTOR';
+    else if (trimmedUser === 'admin' || trimmedUser.startsWith('admin_')) role = 'ADMIN';
 
     const fallbackUser = {
       id: Date.now(),
@@ -391,9 +507,10 @@ export const handleMockRequest = async (url, method = 'get', data = null) => {
       email: `${trimmedUser || 'user'}@portal.example.com`,
       first_name: rawUser || 'Demo',
       last_name: 'User',
-      full_name: (rawUser || 'Demo User').toUpperCase(),
+      full_name: (rawUser || 'Demo User'),
       role: role,
       is_active_intern: true,
+      must_change_password: false,
       assigned_mentor_name: role === 'INTERN' ? 'David Miller' : null,
       assigned_mentor: role === 'INTERN' ? 3 : null,
     };
@@ -403,6 +520,80 @@ export const handleMockRequest = async (url, method = 'get', data = null) => {
       access: `mock_jwt_access_${trimmedUser}`,
       refresh: `mock_jwt_refresh_${trimmedUser}`,
       user: fallbackUser,
+      must_change_password: false,
+    };
+  }
+
+  // 1b. Change Password (First-Login Mandatory Password Change)
+  if (cleanUrl === '/auth/change-password' && method.toLowerCase() === 'post') {
+    const currentPassword = parsedData.current_password || parsedData.currentPassword || '';
+    const newPassword = parsedData.new_password || parsedData.newPassword || '';
+    const confirmPassword = parsedData.confirm_password || parsedData.confirmPassword || newPassword;
+
+    if (!newPassword || newPassword.length < 8) {
+      throw {
+        response: {
+          status: 400,
+          data: { detail: 'New password must be at least 8 characters long.' },
+        },
+      };
+    }
+    if (newPassword !== confirmPassword) {
+      throw {
+        response: {
+          status: 400,
+          data: { detail: 'New password and confirmation password do not match.' },
+        },
+      };
+    }
+
+    const storedInterns = getStore('interns', Object.values(INITIAL_USERS).filter(u => u.role === 'INTERN'));
+    const target = storedInterns.find(
+      (i) => i.id === activeUser?.id || i.username === activeUser?.username
+    );
+
+    if (target) {
+      if (currentPassword && target.password_hash && hashCredentialSync(currentPassword) !== target.password_hash) {
+        throw {
+          response: {
+            status: 400,
+            data: { detail: 'Current temporary password is incorrect.' },
+          },
+        };
+      }
+      const tempPattern = generateTemporaryPassword(
+        target.full_name || target.username,
+        target.course_code || 'INT01'
+      );
+      if (newPassword.toLowerCase() === tempPattern.toLowerCase() || (currentPassword && newPassword === currentPassword)) {
+        throw {
+          response: {
+            status: 400,
+            data: { detail: 'For security, your permanent password must be different from your temporary initial password.' },
+          },
+        };
+      }
+      target.password_hash = hashCredentialSync(newPassword);
+      target.must_change_password = false;
+      target.mustChangePassword = false;
+      setStore('interns', storedInterns);
+      const { password_hash, ...safeTarget } = target;
+      localStorage.setItem('portal_user', JSON.stringify(safeTarget));
+      return {
+        status: 'password_changed',
+        must_change_password: false,
+        mustChangePassword: false,
+        user: safeTarget,
+      };
+    }
+
+    const updatedActive = { ...(activeUser || {}), must_change_password: false, mustChangePassword: false };
+    localStorage.setItem('portal_user', JSON.stringify(updatedActive));
+    return {
+      status: 'password_changed',
+      must_change_password: false,
+      mustChangePassword: false,
+      user: updatedActive,
     };
   }
 
@@ -491,35 +682,97 @@ export const handleMockRequest = async (url, method = 'get', data = null) => {
     }
   }
 
-  // 5. HR Interns (Add, View, Edit, Delete, Change Status)
+  // 5. HR Interns (Preview Credentials, Add, View, Edit, Delete, Reset Password, Toggle Active, Change Status)
+  if (cleanUrl === '/hr/interns/preview-credentials' && method.toLowerCase() === 'post') {
+    const current = getStore('interns', Object.values(INITIAL_USERS).filter(u => u.role === 'INTERN'));
+    const fullName = (
+      parsedData.full_name ||
+      parsedData.fullName ||
+      `${parsedData.first_name || ''} ${parsedData.last_name || ''}`
+    ).trim();
+    const courseName = (parsedData.course_name || parsedData.courseName || parsedData.course || '').trim();
+    const courseCode = (parsedData.course_code || parsedData.courseCode || 'INT01').trim();
+    const existingUsernames = current.map(i => i.username);
+    const username = generateUniqueInternUsername(fullName || 'Intern', existingUsernames);
+    const temporary_password = generateTemporaryPassword(fullName || 'Intern', courseCode);
+    return {
+      full_name: fullName,
+      course_name: courseName,
+      course_code: courseCode,
+      username,
+      temporary_password,
+      must_change_password: true,
+    };
+  }
+
   if (cleanUrl === '/hr/interns') {
     const current = getStore('interns', Object.values(INITIAL_USERS).filter(u => u.role === 'INTERN'));
     if (method.toLowerCase() === 'post') {
+      const emailCheck = (parsedData.email || '').trim().toLowerCase();
+      if (emailCheck && current.some(i => (i.email || '').toLowerCase() === emailCheck)) {
+        throw {
+          response: {
+            status: 400,
+            data: {
+              email: ['An intern account with this email address already exists.'],
+              detail: 'An intern account with this email address already exists.',
+            },
+          },
+        };
+      }
       const mentors = getStore('mentors', Object.values(INITIAL_USERS).filter(u => u.role === 'MENTOR'));
       const mId = parsedData.assigned_mentor || parsedData.mentor_id ? parseInt(parsedData.assigned_mentor || parsedData.mentor_id) : null;
       const mObj = mentors.find(m => m.id === mId);
-      const rawFull = (parsedData.full_name || `${parsedData.first_name || ''} ${parsedData.last_name || ''}`).trim();
+      const rawFull = (
+        parsedData.full_name ||
+        parsedData.fullName ||
+        `${parsedData.first_name || ''} ${parsedData.last_name || ''}`
+      ).trim();
       const parts = rawFull.split(' ');
       const firstName = parsedData.first_name || parts[0] || 'Intern';
       const lastName = parsedData.last_name || parts.slice(1).join(' ') || '';
       const nextNum = current.length + 1;
       const statusVal = parsedData.status || parsedData.intern_status || 'Active';
-      const courseVal = parsedData.course || parsedData.education_qualification || '';
+      const courseVal = parsedData.course_name || parsedData.courseName || parsedData.course || parsedData.education_qualification || '';
+      const courseCodeVal = (parsedData.course_code || parsedData.courseCode || 'INT01').trim();
+      const batchVal = parsedData.batch || 'Batch 2026-A';
+      const joiningDateVal = parsedData.joining_date || parsedData.joiningDate || parsedData.start_date || new Date().toISOString().split('T')[0];
       const deptVal = parsedData.department_name || parsedData.department || 'Data Analytics';
-      const durationVal = parsedData.internship_duration || calculateDuration(parsedData.start_date, parsedData.end_date);
+      const durationVal =
+        parsedData.duration ||
+        parsedData.internship_duration ||
+        calculateDuration(joiningDateVal, parsedData.end_date) ||
+        '12 weeks';
+
+      const existingUsernames = current.map(i => i.username);
+      const autoUsername = generateUniqueInternUsername(rawFull || parsedData.username || `intern.${nextNum}`, existingUsernames);
+      const tempPassword = generateTemporaryPassword(rawFull || autoUsername, courseCodeVal);
+      const passwordHash = hashCredentialSync(parsedData.password || tempPassword);
+
+      const { password, ...restData } = parsedData;
       const newI = {
         id: Date.now(),
         intern_code: parsedData.intern_code || `INT-2026-${String(nextNum).padStart(4, '0')}`,
-        username: parsedData.username || (parsedData.email ? parsedData.email.split('@')[0].replace(/[^a-zA-Z0-9_]/g, '_') : `intern_${nextNum}`),
-        ...parsedData,
+        ...restData,
+        username: autoUsername,
         first_name: firstName,
         last_name: lastName,
-        full_name: rawFull || parsedData.username || `Intern ${nextNum}`,
+        full_name: rawFull || autoUsername,
+        fullName: rawFull || autoUsername,
         course: courseVal,
+        course_name: courseVal,
+        courseName: courseVal,
+        course_code: courseCodeVal,
+        courseCode: courseCodeVal,
+        batch: batchVal,
+        joining_date: joiningDateVal,
+        joiningDate: joiningDateVal,
+        start_date: joiningDateVal,
         education_qualification: courseVal,
         department: deptVal,
         department_name: deptVal,
-        internship_role: parsedData.internship_role || 'Data Analytics Intern',
+        internship_role: parsedData.internship_role || courseVal || 'Data Analytics Intern',
+        duration: durationVal,
         internship_duration: durationVal,
         assigned_mentor: mId,
         assigned_mentor_name: mObj ? (mObj.full_name || mObj.username) : null,
@@ -528,17 +781,76 @@ export const handleMockRequest = async (url, method = 'get', data = null) => {
         status: statusVal,
         intern_status: statusVal,
         role: 'INTERN',
-        is_active_intern: !['Terminated', 'Completed'].includes(statusVal),
+        must_change_password: true,
+        mustChangePassword: true,
+        password_hash: passwordHash,
+        is_active_intern: !['Inactive', 'Terminated', 'Completed'].includes(statusVal),
         created_at: new Date().toISOString(),
       };
       current.unshift(newI);
       setStore('interns', current);
-      return newI;
+      const { password_hash, ...safeIntern } = newI;
+      return {
+        ...safeIntern,
+        generated_credentials: {
+          username: autoUsername,
+          temporary_password: tempPassword,
+          must_change_password: true,
+        },
+      };
     }
-    return current;
+    return current.map(({ password_hash, ...safe }) => safe);
   }
 
-  // 5b. Change Intern Status
+  // 5b. Reset Intern Temporary Password
+  if (cleanUrl.match(/\/hr\/interns\/\d+\/reset-password/)) {
+    const internId = parseInt(cleanUrl.split('/')[3]);
+    const current = getStore('interns', Object.values(INITIAL_USERS).filter(u => u.role === 'INTERN'));
+    const target = current.find(i => i.id === internId);
+    if (target) {
+      const fullName = target.full_name || `${target.first_name || ''} ${target.last_name || ''}`.trim() || target.username;
+      const code = parsedData?.course_code || target.course_code || target.courseCode || 'INT01';
+      const tempPassword = generateTemporaryPassword(fullName, code);
+      target.password_hash = hashCredentialSync(tempPassword);
+      target.must_change_password = true;
+      target.mustChangePassword = true;
+      setStore('interns', current);
+      const { password_hash, ...safeTarget } = target;
+      return {
+        status: 'password_reset',
+        username: target.username,
+        temporary_password: tempPassword,
+        must_change_password: true,
+        user: safeTarget,
+      };
+    }
+  }
+
+  // 5c. Toggle Intern Active / Inactive Status
+  if (cleanUrl.match(/\/hr\/interns\/\d+\/toggle-active/)) {
+    const internId = parseInt(cleanUrl.split('/')[3]);
+    const current = getStore('interns', Object.values(INITIAL_USERS).filter(u => u.role === 'INTERN'));
+    const target = current.find(i => i.id === internId);
+    if (target) {
+      const reqStatus = (parsedData?.status || '').trim();
+      const nextStatus =
+        reqStatus.toLowerCase() === 'active'
+          ? 'Active'
+          : reqStatus.toLowerCase() === 'inactive'
+          ? 'Inactive'
+          : target.status === 'Active'
+          ? 'Inactive'
+          : 'Active';
+      target.status = nextStatus;
+      target.intern_status = nextStatus;
+      target.is_active_intern = nextStatus === 'Active';
+      setStore('interns', current);
+      const { password_hash, ...safeTarget } = target;
+      return safeTarget;
+    }
+  }
+
+  // 5d. Change Intern Status
   if (cleanUrl.match(/\/hr\/interns\/\d+\/change-status/)) {
     const internId = parseInt(cleanUrl.split('/')[3]);
     const current = getStore('interns', Object.values(INITIAL_USERS).filter(u => u.role === 'INTERN'));
@@ -546,9 +858,10 @@ export const handleMockRequest = async (url, method = 'get', data = null) => {
     if (target) {
       target.status = parsedData.status || 'Active';
       target.intern_status = target.status;
-      target.is_active_intern = !['Terminated', 'Completed'].includes(target.status);
+      target.is_active_intern = !['Inactive', 'Terminated', 'Completed'].includes(target.status);
       setStore('interns', current);
-      return target;
+      const { password_hash, ...safeTarget } = target;
+      return safeTarget;
     }
   }
 
@@ -1602,25 +1915,39 @@ export const handleMockRequest = async (url, method = 'get', data = null) => {
       }
 
       const nextCodeNum = existingInterns.length + 1;
+      const takenUsernames = existingInterns.map(i => i.username);
+      const autoUsername = generateUniqueInternUsername(r.full_name, takenUsernames);
+      const effCourseCode = r.course_code || 'INT01';
+      const tempPassword = generateTemporaryPassword(r.full_name, effCourseCode);
+
       existingInterns.unshift({
         id: Date.now() + Math.floor(Math.random() * 10000),
         intern_code: `INT-2026-${String(nextCodeNum).padStart(4, '0')}`,
-        username: emailLower.split('@')[0].replace(/[^a-zA-Z0-9_]/g, '_') + '_' + nextCodeNum,
+        username: autoUsername,
         first_name: pts[0] || 'Intern',
         last_name: pts.slice(1).join(' ') || '',
         full_name: r.full_name,
+        fullName: r.full_name,
         email: r.email,
         phone: r.phone,
         gender: r.gender || '',
         college: r.college || '',
         course: r.course || '',
+        course_name: r.course || '',
+        courseName: r.course || '',
+        course_code: effCourseCode,
+        courseCode: effCourseCode,
+        batch: r.batch || 'Batch 2026-A',
         education_qualification: r.course || '',
         department: r.department || 'Data Analytics',
         department_name: r.department || 'Data Analytics',
-        internship_role: r.internship_role || 'Data Analytics Intern',
+        internship_role: r.internship_role || r.course || 'Data Analytics Intern',
         start_date: r.start_date || '',
+        joining_date: r.start_date || '',
+        joiningDate: r.start_date || '',
         end_date: r.end_date || '',
-        internship_duration: calculateDuration(r.start_date, r.end_date),
+        duration: r.duration || calculateDuration(r.start_date, r.end_date) || '12 weeks',
+        internship_duration: r.duration || calculateDuration(r.start_date, r.end_date) || '12 weeks',
         assigned_mentor: r.mentor_id || null,
         assigned_mentor_name: r.mentor_id ? r.assigned_mentor : null,
         hr_contact: 2,
@@ -1630,7 +1957,10 @@ export const handleMockRequest = async (url, method = 'get', data = null) => {
         address: r.address || '',
         source: 'Bulk Import',
         role: 'INTERN',
-        is_active_intern: !['Terminated', 'Completed'].includes(r.status),
+        must_change_password: true,
+        mustChangePassword: true,
+        password_hash: hashCredentialSync(tempPassword),
+        is_active_intern: !['Inactive', 'Terminated', 'Completed'].includes(r.status),
         created_at: new Date().toISOString(),
       });
       successful += 1;

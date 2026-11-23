@@ -22,11 +22,14 @@ from .serializers import (
     WebsiteBrandingSerializer, WebsiteThemeSerializer,
     InternDepartmentSerializer, InternshipProgramSerializer, ImportHistorySerializer
 )
+from rest_framework_simplejwt.tokens import RefreshToken
+from django.core.cache import cache
 from .services import send_notification_and_email, generate_certificate_pdf
 from .intern_import_service import (
     SYSTEM_FIELDS, ensure_default_departments_and_programs,
     auto_detect_column_mapping, parse_uploaded_table_file,
-    validate_import_rows, execute_import_confirm, sanitize_spreadsheet_cell
+    validate_import_rows, execute_import_confirm, sanitize_spreadsheet_cell,
+    generate_unique_intern_username, generate_temporary_password
 )
 
 
@@ -47,6 +50,120 @@ class IsIntern(permissions.BasePermission):
 class IsAdminUserRole(permissions.BasePermission):
     def has_permission(self, request, view):
         return request.user.is_authenticated and request.user.role == UserRole.ADMIN
+
+
+# --- Authentication, Login Rate-Limiting & First-Login Password Change ---
+
+class PortalLoginView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    MAX_ATTEMPTS = 5
+    LOCKOUT_SECONDS = 300  # 5 minutes
+
+    def post(self, request):
+        username_raw = (request.data.get('username') or '').strip()
+        password_raw = request.data.get('password') or ''
+
+        if not username_raw or not password_raw:
+            return Response(
+                {'detail': 'Username and password are required.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        ip_addr = request.META.get('REMOTE_ADDR') or 'local'
+        cache_key = f"login_attempts:{ip_addr}:{username_raw.lower()}"
+        attempts = cache.get(cache_key, 0)
+        if attempts >= self.MAX_ATTEMPTS:
+            return Response(
+                {'detail': 'Too many failed login attempts. Please wait 5 minutes before trying again.'},
+                status=status.HTTP_429_TOO_MANY_REQUESTS
+            )
+
+        user = (
+            User.objects.filter(username__iexact=username_raw).first()
+            or User.objects.filter(email__iexact=username_raw).first()
+        )
+
+        if not user or not user.check_password(password_raw):
+            cache.set(cache_key, attempts + 1, self.LOCKOUT_SECONDS)
+            return Response(
+                {'detail': 'Invalid username or password. Please try again.'},
+                status=status.HTTP_401_UNAUTHORIZED
+            )
+
+        # Check account status
+        if not user.is_active or (
+            user.role == UserRole.INTERN and user.intern_status in ['Inactive', 'Terminated']
+        ):
+            return Response(
+                {'detail': 'Your intern account is currently inactive. Please contact HR.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        cache.delete(cache_key)
+        refresh = RefreshToken.for_user(user)
+        user_data = UserSerializer(user).data
+
+        return Response({
+            'access': str(refresh.access_token),
+            'refresh': str(refresh),
+            'user': user_data,
+            'must_change_password': bool(user.must_change_password),
+            'mustChangePassword': bool(user.must_change_password),
+        })
+
+
+class ChangePasswordView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        user = request.user
+        current_password = request.data.get('current_password') or request.data.get('currentPassword') or ''
+        new_password = request.data.get('new_password') or request.data.get('newPassword') or ''
+        confirm_password = request.data.get('confirm_password') or request.data.get('confirmPassword') or new_password
+
+        if current_password and not user.check_password(current_password):
+            return Response(
+                {'detail': 'Current password is incorrect.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if not new_password or len(new_password) < 8:
+            return Response(
+                {'detail': 'New password must be at least 8 characters long.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if new_password != confirm_password:
+            return Response(
+                {'detail': 'New password and confirmation password do not match.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if user.check_password(new_password):
+            return Response(
+                {'detail': 'New password must be different from your temporary initial password.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        full_name = f"{user.first_name} {user.last_name}".strip() or user.username
+        temp_pattern = generate_temporary_password(full_name, user.course_code or 'INT01')
+        if new_password.lower() == temp_pattern.lower():
+            return Response(
+                {'detail': 'For security, your permanent password cannot be your name combined with your course code.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        user.set_password(new_password)
+        user.must_change_password = False
+        user.save(update_fields=['password', 'must_change_password'])
+
+        return Response({
+            'status': 'password_changed',
+            'must_change_password': False,
+            'mustChangePassword': False,
+            'user': UserSerializer(user).data,
+        })
 
 
 # --- Current User Profile ---
@@ -143,6 +260,8 @@ class HRInternViewSet(viewsets.ModelViewSet):
         ).order_by('-id')
         search = (self.request.query_params.get('search') or '').strip()
         dept = (self.request.query_params.get('department') or '').strip()
+        course_param = (self.request.query_params.get('course') or '').strip()
+        batch_param = (self.request.query_params.get('batch') or '').strip()
         status_param = (self.request.query_params.get('status') or '').strip()
         start_after = (self.request.query_params.get('start_date') or '').strip()
         end_before = (self.request.query_params.get('end_date') or '').strip()
@@ -155,6 +274,10 @@ class HRInternViewSet(viewsets.ModelViewSet):
                 | Q(email__icontains=search)
                 | Q(intern_code__icontains=search)
                 | Q(college__icontains=search)
+                | Q(course__icontains=search)
+                | Q(course_name__icontains=search)
+                | Q(course_code__icontains=search)
+                | Q(batch__icontains=search)
                 | Q(internship_role__icontains=search)
             )
         if dept:
@@ -162,6 +285,14 @@ class HRInternViewSet(viewsets.ModelViewSet):
                 qs = qs.filter(department_ref_id=int(dept))
             else:
                 qs = qs.filter(Q(department_ref__name__iexact=dept) | Q(department__iexact=dept))
+        if course_param:
+            qs = qs.filter(
+                Q(course__icontains=course_param)
+                | Q(course_name__icontains=course_param)
+                | Q(course_code__iexact=course_param)
+            )
+        if batch_param:
+            qs = qs.filter(batch__icontains=batch_param)
         if status_param:
             qs = qs.filter(intern_status__iexact=status_param)
         if start_after:
@@ -179,19 +310,94 @@ class HRInternViewSet(viewsets.ModelViewSet):
                 intern.hr_contact = request.user
                 intern.save(update_fields=['hr_contact'])
 
-            # Send automated welcome notification & email
+            # Send automated welcome notification & email (without logging raw password in DB logs)
             send_notification_and_email(
                 recipient=intern,
                 title="Welcome to the Internship Portal!",
                 message=(
                     f"Congratulations! Your internship account has been registered. "
-                    f"Username: {intern.username}. You can now log in and track your projects."
+                    f"Username: {intern.username}. Please change your temporary password on first login."
                 ),
                 notification_type='REGISTRATION',
                 link='/login'
             )
-            return Response(UserSerializer(intern).data, status=status.HTTP_201_CREATED)
+            data = UserSerializer(intern).data
+            temp_pwd = getattr(intern, '_generated_temporary_password', '')
+            data['generated_credentials'] = {
+                'username': intern.username,
+                'temporary_password': temp_pwd,
+                'must_change_password': intern.must_change_password,
+            }
+            return Response(data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=False, methods=['post'], url_path='preview-credentials')
+    def preview_credentials(self, request):
+        full_name = (
+            request.data.get('full_name')
+            or request.data.get('fullName')
+            or f"{request.data.get('first_name', '')} {request.data.get('last_name', '')}"
+        ).strip()
+        course_name = (
+            request.data.get('course_name')
+            or request.data.get('courseName')
+            or request.data.get('course')
+            or ''
+        ).strip()
+        course_code = (
+            request.data.get('course_code')
+            or request.data.get('courseCode')
+            or 'INT01'
+        ).strip()
+
+        if not full_name:
+            return Response({'detail': 'Full Name is required to preview credentials.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        username = generate_unique_intern_username(full_name)
+        temporary_password = generate_temporary_password(full_name, course_code)
+        return Response({
+            'full_name': full_name,
+            'course_name': course_name,
+            'course_code': course_code,
+            'username': username,
+            'temporary_password': temporary_password,
+            'must_change_password': True,
+        })
+
+    @action(detail=True, methods=['post'], url_path='reset-password')
+    def reset_password(self, request, pk=None):
+        intern = self.get_object()
+        full_name = f"{intern.first_name} {intern.last_name}".strip() or intern.username
+        course_code = (
+            request.data.get('course_code')
+            or intern.course_code
+            or 'INT01'
+        ).strip()
+        temp_password = generate_temporary_password(full_name, course_code)
+        intern.set_password(temp_password)
+        intern.must_change_password = True
+        intern.save(update_fields=['password', 'must_change_password'])
+
+        return Response({
+            'status': 'password_reset',
+            'username': intern.username,
+            'temporary_password': temp_password,
+            'must_change_password': True,
+            'user': UserSerializer(intern).data,
+        })
+
+    @action(detail=True, methods=['post'], url_path='toggle-active')
+    def toggle_active(self, request, pk=None):
+        intern = self.get_object()
+        requested = (request.data.get('status') or '').strip()
+        if requested.lower() in ('active', 'inactive'):
+            next_status = 'Active' if requested.lower() == 'active' else 'Inactive'
+        else:
+            next_status = 'Inactive' if intern.intern_status == 'Active' else 'Active'
+        intern.intern_status = next_status
+        intern.is_active_intern = next_status == 'Active'
+        intern.save()
+        return Response(UserSerializer(intern).data)
 
     @action(detail=True, methods=['post'], url_path='change-status')
     def change_status(self, request, pk=None):

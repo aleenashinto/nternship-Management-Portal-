@@ -569,4 +569,141 @@ class InternshipPortalEndToEndTests(TestCase):
         self.assertEqual(exp_xlsx.status_code, 200)
         self.assertIn("spreadsheetml.sheet", exp_xlsx["Content-Type"])
 
+    def test_automatic_intern_account_creation_credentials_and_first_login_flow(self):
+        self.client.force_authenticate(user=self.hr)
+
+        # 1. Preview credentials before account creation
+        prev = self.client.post(
+            "/api/hr/interns/preview-credentials/",
+            {
+                "fullName": "Aleena Mathew",
+                "courseName": "Python Full Stack Development",
+                "courseCode": "PYFS01",
+            },
+            format="json",
+        )
+        self.assertEqual(prev.status_code, 200)
+        self.assertEqual(prev.data["username"], "aleena.mathew")
+        self.assertEqual(prev.data["temporary_password"], "AleenaMathewPYFS01")
+
+        # 2. HR confirms creation of Aleena Mathew -> username: aleena.mathew, temp password: AleenaMathewPYFS01
+        c1 = self.client.post(
+            "/api/hr/interns/",
+            {
+                "fullName": "Aleena Mathew",
+                "email": "aleena.mathew@test.local",
+                "phone": "+91 9847000001",
+                "courseName": "Python Full Stack Development",
+                "courseCode": "PYFS01",
+                "batch": "Batch 2026-A",
+                "joiningDate": "2026-06-01",
+                "duration": "12 weeks",
+                "status": "Active",
+            },
+            format="json",
+        )
+        self.assertEqual(c1.status_code, 201)
+        self.assertEqual(c1.data["username"], "aleena.mathew")
+        self.assertEqual(c1.data["generated_credentials"]["temporary_password"], "AleenaMathewPYFS01")
+        self.assertTrue(c1.data["mustChangePassword"])
+        self.assertNotIn("password", c1.data)
+
+        # Verify password is hashed in DB, not plain text
+        aleena_user = User.objects.get(username="aleena.mathew")
+        self.assertNotEqual(aleena_user.password, "AleenaMathewPYFS01")
+        self.assertTrue(aleena_user.check_password("AleenaMathewPYFS01"))
+
+        # 3. Duplicate names automatically append sequential numbers: aleena.mathew1, aleena.mathew2
+        c2 = self.client.post(
+            "/api/hr/interns/",
+            {
+                "fullName": "Aleena Mathew",
+                "email": "aleena.mathew2@test.local",
+                "phone": "+91 9847000002",
+                "courseName": "Digital Marketing",
+                "courseCode": "DM01",
+                "batch": "Batch 2026-B",
+            },
+            format="json",
+        )
+        self.assertEqual(c2.status_code, 201)
+        self.assertEqual(c2.data["username"], "aleena.mathew1")
+        self.assertEqual(c2.data["generated_credentials"]["temporary_password"], "AleenaMathewDM01")
+
+        c3 = self.client.post(
+            "/api/hr/interns/",
+            {
+                "fullName": "Aleena Mathew",
+                "email": "aleena.mathew3@test.local",
+                "phone": "+91 9847000003",
+                "courseName": "Data Analytics",
+                "courseCode": "DA01",
+                "batch": "Batch 2026-B",
+            },
+            format="json",
+        )
+        self.assertEqual(c3.status_code, 201)
+        self.assertEqual(c3.data["username"], "aleena.mathew2")
+
+        # 4. Intern logs in with generated credentials -> must_change_password is True
+        self.client.force_authenticate(user=None)
+        login_res = self.client.post(
+            "/api/auth/login/",
+            {"username": "aleena.mathew", "password": "AleenaMathewPYFS01"},
+            format="json",
+        )
+        self.assertEqual(login_res.status_code, 200)
+        self.assertTrue(login_res.data["must_change_password"])
+
+        # 5. First-login password change: cannot reuse Name+CourseCode, must set new password
+        self.client.force_authenticate(user=aleena_user)
+        reuse_res = self.client.post(
+            "/api/auth/change-password/",
+            {
+                "current_password": "AleenaMathewPYFS01",
+                "new_password": "AleenaMathewPYFS01",
+                "confirm_password": "AleenaMathewPYFS01",
+            },
+            format="json",
+        )
+        self.assertEqual(reuse_res.status_code, 400)
+
+        change_res = self.client.post(
+            "/api/auth/change-password/",
+            {
+                "current_password": "AleenaMathewPYFS01",
+                "new_password": "SecureNewPass#2026",
+                "confirm_password": "SecureNewPass#2026",
+            },
+            format="json",
+        )
+        self.assertEqual(change_res.status_code, 200)
+        self.assertFalse(change_res.data["must_change_password"])
+
+        # 6. HR deactivates intern -> login is blocked with 403; HR reactivates & resets password
+        self.client.force_authenticate(user=self.hr)
+        deact_res = self.client.post(
+            f"/api/hr/interns/{aleena_user.id}/toggle-active/",
+            {"status": "Inactive"},
+            format="json",
+        )
+        self.assertEqual(deact_res.status_code, 200)
+        self.assertEqual(deact_res.data["status"], "Inactive")
+
+        self.client.force_authenticate(user=None)
+        blocked_login = self.client.post(
+            "/api/auth/login/",
+            {"username": "aleena.mathew", "password": "SecureNewPass#2026"},
+            format="json",
+        )
+        self.assertEqual(blocked_login.status_code, 403)
+
+        self.client.force_authenticate(user=self.hr)
+        self.client.post(f"/api/hr/interns/{aleena_user.id}/toggle-active/", {"status": "Active"}, format="json")
+        reset_res = self.client.post(f"/api/hr/interns/{aleena_user.id}/reset-password/")
+        self.assertEqual(reset_res.status_code, 200)
+        self.assertEqual(reset_res.data["temporary_password"], "AleenaMathewPYFS01")
+        self.assertTrue(reset_res.data["must_change_password"])
+
+
 

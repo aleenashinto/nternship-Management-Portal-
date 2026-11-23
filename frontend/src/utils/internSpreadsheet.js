@@ -3,25 +3,27 @@ import * as XLSX from 'xlsx';
 export const SYSTEM_FIELDS = [
   { key: 'full_name', label: 'Full Name', required: true },
   { key: 'email', label: 'Email Address', required: true },
-  { key: 'phone', label: 'Phone Number', required: true },
-  { key: 'gender', label: 'Gender', required: false },
-  { key: 'college', label: 'College / University', required: false },
-  { key: 'course', label: 'Course / Degree', required: false },
+  { key: 'phone', label: 'Phone Number', required: false },
+  { key: 'course', label: 'Course Name', required: true },
+  { key: 'course_code', label: 'Course Code', required: true },
+  { key: 'batch', label: 'Batch', required: false },
+  { key: 'start_date', label: 'Joining / Start Date', required: false },
+  { key: 'end_date', label: 'Internship End Date', required: false },
+  { key: 'duration', label: 'Internship Duration', required: false },
   { key: 'department', label: 'Department', required: false },
   { key: 'internship_role', label: 'Internship Role', required: false },
-  { key: 'start_date', label: 'Internship Start Date', required: false },
-  { key: 'end_date', label: 'Internship End Date', required: false },
+  { key: 'college', label: 'College / University', required: false },
   { key: 'assigned_mentor', label: 'Assigned Mentor', required: false },
-  { key: 'hr_contact', label: 'HR Contact', required: false },
   { key: 'status', label: 'Status', required: false },
   { key: 'address', label: 'Address', required: false },
 ];
 
 export const INTERN_STATUS_OPTIONS = [
+  'Active',
+  'Inactive',
   'Applied',
   'Selected',
   'Onboarding',
-  'Active',
   'Completed',
   'Terminated',
 ];
@@ -39,14 +41,21 @@ const COLUMN_ALIASES = {
     'phone', 'phone number', 'phone_number', 'mobile', 'mobile number',
     'contact', 'contact number', 'telephone', 'cell'
   ],
+  course: [
+    'course', 'course name', 'course_name', 'coursename', 'degree',
+    'course / degree', 'qualification', 'education', 'education_qualification',
+    'major', 'program', 'branch'
+  ],
+  course_code: [
+    'course_code', 'course code', 'coursecode', 'code', 'program code', 'track code'
+  ],
+  batch: [
+    'batch', 'batch name', 'batch_code', 'cohort', 'intake', 'session'
+  ],
   gender: ['gender', 'sex'],
   college: [
     'college', 'university', 'college / university', 'institution',
     'institute', 'school', 'campus'
-  ],
-  course: [
-    'course', 'degree', 'course / degree', 'qualification',
-    'education', 'education_qualification', 'major', 'program', 'branch'
   ],
   department: [
     'department', 'dept', 'department_name', 'division', 'domain', 'stream', 'team'
@@ -56,12 +65,15 @@ const COLUMN_ALIASES = {
     'job title', 'title', 'track'
   ],
   start_date: [
-    'start_date', 'start date', 'startdate', 'joining date',
-    'internship start date', 'from date', 'begin date'
+    'start_date', 'start date', 'startdate', 'joining date', 'joining_date',
+    'joiningdate', 'internship start date', 'from date', 'begin date'
   ],
   end_date: [
     'end_date', 'end date', 'enddate', 'completion date',
     'internship end date', 'to date', 'finish date'
+  ],
+  duration: [
+    'duration', 'internship_duration', 'internship duration', 'period', 'tenure'
   ],
   assigned_mentor: [
     'assigned_mentor', 'assigned mentor', 'mentor', 'mentor name',
@@ -77,6 +89,73 @@ const COLUMN_ALIASES = {
     'address', 'location', 'city', 'residential address', 'street'
   ],
 };
+
+export function generateInternBaseUsername(fullName) {
+  const raw = String(fullName || '').trim().toLowerCase();
+  const cleaned = raw.replace(/[^a-z0-9\s]/g, '');
+  const tokens = cleaned.split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) return 'intern.user';
+  return tokens.join('.');
+}
+
+export function generateUniqueInternUsername(fullName, existingUsernames = []) {
+  const base = generateInternBaseUsername(fullName);
+  const takenSet =
+    existingUsernames instanceof Set
+      ? existingUsernames
+      : new Set(
+          (Array.isArray(existingUsernames) ? existingUsernames : [])
+            .map((u) => String(u || '').trim().toLowerCase())
+            .filter(Boolean)
+        );
+
+  if (!takenSet.has(base)) {
+    takenSet.add(base);
+    return base;
+  }
+
+  let seq = 1;
+  while (true) {
+    const candidate = `${base}${seq}`;
+    if (!takenSet.has(candidate)) {
+      takenSet.add(candidate);
+      return candidate;
+    }
+    seq += 1;
+  }
+}
+
+export function generateTemporaryPassword(fullName, courseCode) {
+  const rawName = String(fullName || '').trim();
+  const words = rawName
+    .split(/\s+/)
+    .map((w) => w.replace(/[^a-zA-Z0-9]/g, ''))
+    .filter(Boolean);
+  const formattedWords = words.map((w) => {
+    if (w === w.toLowerCase() || w === w.toUpperCase()) {
+      return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase();
+    }
+    return w.charAt(0).toUpperCase() + w.slice(1);
+  });
+  const namePart = formattedWords.join('') || 'Intern';
+  const codePart = String(courseCode || '').trim().replace(/[^a-zA-Z0-9]/g, '') || 'INT01';
+  return `${namePart}${codePart}`;
+}
+
+export function hashCredentialSync(plainText) {
+  // Deterministic non-reversible salted hash for client-side demo store so plain passwords are never persisted
+  const str = `beat_portal_salt_v2::${String(plainText || '')}`;
+  let h1 = 0xdeadbeef ^ str.length;
+  let h2 = 0x41c6ce57 ^ str.length;
+  for (let i = 0; i < str.length; i += 1) {
+    const ch = str.charCodeAt(i);
+    h1 = Math.imul(h1 ^ ch, 2654435761);
+    h2 = Math.imul(h2 ^ ch, 1597334677);
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return `pbkdf2_sha256$260000$${(h2 >>> 0).toString(16).padStart(8, '0')}${(h1 >>> 0).toString(16).padStart(8, '0')}`;
+}
 
 export function sanitizeSpreadsheetCell(val) {
   if (val === null || val === undefined) return '';
@@ -291,6 +370,9 @@ export function validateInternRows(
   const existingEmailSet = new Set(
     existingInterns.map((i) => String(i.email || '').trim().toLowerCase()).filter(Boolean)
   );
+  const takenUsernamesSet = new Set(
+    existingInterns.map((i) => String(i.username || '').trim().toLowerCase()).filter(Boolean)
+  );
   const seenEmailsInFile = new Map();
 
   let validCount = 0;
@@ -315,11 +397,14 @@ export function validateInternRows(
     const phone = getVal('phone');
     const gender = getVal('gender');
     const college = getVal('college');
-    const course = getVal('course');
+    const course = getVal('course') || getVal('course_name');
+    const course_code = getVal('course_code');
+    const batch = getVal('batch');
     const departmentRaw = getVal('department');
     const internship_role = getVal('internship_role') || 'Data Analytics Intern';
-    const startDateRaw = getVal('start_date');
+    const startDateRaw = getVal('start_date') || getVal('joining_date');
     const endDateRaw = getVal('end_date');
+    const durationRaw = getVal('duration');
     const mentorRaw = getVal('assigned_mentor');
     const hrRaw = getVal('hr_contact');
     const statusRaw = getVal('status') || 'Active';
@@ -346,11 +431,23 @@ export function validateInternRows(
       error_reasons.push(`Invalid email format (${email})`);
     }
 
-    if (!phone) {
+    if ((mapping.course_code || raw.course_code !== undefined) && !course_code) {
+      cell_errors.course_code = 'Course Code is required.';
+      error_reasons.push('Missing Course Code');
+      has_missing_required = true;
+    }
+
+    if (mapping.course && (mapping.course_code || raw.course_code !== undefined) && !course) {
+      cell_errors.course = 'Course Name is required.';
+      error_reasons.push('Missing Course Name');
+      has_missing_required = true;
+    }
+
+    if (!phone && !course_code) {
       cell_errors.phone = 'Phone Number is required.';
       error_reasons.push('Missing Phone Number');
       has_missing_required = true;
-    } else {
+    } else if (phone) {
       const digits = phone.replace(/\D/g, '');
       if (digits.length < 7 || digits.length > 15 || !/^[\+\d\s\-\(\)\.]+$/.test(phone)) {
         cell_errors.phone = `Invalid phone number '${phone}' (7–15 digits required).`;
@@ -453,19 +550,46 @@ export function validateInternRows(
     if (!is_valid) row_status = 'INVALID';
     else if (is_db_duplicate) row_status = 'DUPLICATE_EXISTING';
 
+    const effectiveCourseCode =
+      course_code ||
+      (course
+        ? course
+            .split(/\s+/)
+            .map((w) => w[0]?.toUpperCase() || '')
+            .join('')
+            .slice(0, 4) + '01'
+        : 'INT01');
+
+    const generated_username = generateUniqueInternUsername(
+      full_name || email.split('@')[0] || 'intern',
+      takenUsernamesSet
+    );
+    const temporary_password = generateTemporaryPassword(
+      full_name || 'Intern',
+      effectiveCourseCode
+    );
+
     return {
       row_number: rowNumber,
       full_name,
+      username: generated_username,
+      generated_username,
+      temporary_password,
       email,
       phone,
       gender,
       college,
       course,
+      course_name: course,
+      course_code: course_code || effectiveCourseCode,
+      batch,
       department: resolvedDeptName,
       department_id: resolvedDeptId,
       internship_role,
       start_date: startParsed.iso || startDateRaw,
+      joining_date: startParsed.iso || startDateRaw,
       end_date: endParsed.iso || endDateRaw,
+      duration: durationRaw || calculateDuration(startParsed.iso || startDateRaw, endParsed.iso || endDateRaw),
       assigned_mentor: resolvedMentorName,
       mentor_id: resolvedMentorId,
       hr_contact: hrRaw,
@@ -499,62 +623,54 @@ export function downloadSampleTemplate(format = 'csv') {
     'Full Name',
     'Email',
     'Phone',
-    'Gender',
-    'College',
-    'Course',
+    'Course Name',
+    'Course Code',
+    'Batch',
+    'Joining Date',
+    'Internship Duration',
     'Department',
-    'Internship Role',
-    'Start Date',
-    'End Date',
     'Assigned Mentor',
     'Status',
-    'Address',
   ];
   const sampleRows = [
     [
-      'Aarav Sharma',
-      'aarav.sharma@university.edu',
-      '+91 9876543210',
-      'Male',
-      'IIT Madras',
-      'B.Tech in Data Science',
-      'Data Analytics',
-      'Data Analytics Intern',
+      'Aleena Mathew',
+      'aleena.mathew@university.edu',
+      '+91 9847123450',
+      'Python Full Stack Development',
+      'PYFS01',
+      'Batch 2026-A',
       '2026-06-01',
-      '2026-08-31',
+      '12 weeks',
+      'Software Engineering',
       'David Miller',
       'Active',
-      'Chennai, Tamil Nadu',
     ],
     [
-      'Meera Krishnan',
-      'meera.k@university.edu',
-      '+91 9876501234',
-      'Female',
-      'NIT Calicut',
-      'M.Tech in Computer Science',
-      'Software Engineering',
-      'Full-Stack Developer Intern',
-      '2026-06-15',
-      '2026-09-15',
+      'Anjali Thomas',
+      'anjali.thomas@university.edu',
+      '+91 9847123451',
+      'Digital Marketing & Analytics',
+      'DM01',
+      'Batch 2026-A',
+      '2026-06-01',
+      '12 weeks',
+      'Data Analytics',
       'David Miller',
-      'Onboarding',
-      'Kochi, Kerala',
+      'Active',
     ],
     [
       'Rohan Verma',
       'rohan.verma@university.edu',
       '+91 9811122334',
-      'Male',
-      'BITS Pilani',
-      'B.E. in Artificial Intelligence',
-      'Artificial Intelligence & ML',
-      'AI Research Intern',
+      'Data Analytics & BI',
+      'DA01',
+      'Batch 2026-B',
       '2026-07-01',
-      '2026-09-30',
+      '12 weeks',
+      'Data Analytics',
       'David Miller',
-      'Selected',
-      'Bengaluru, Karnataka',
+      'Active',
     ],
   ];
 

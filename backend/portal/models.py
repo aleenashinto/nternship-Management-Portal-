@@ -11,10 +11,11 @@ class UserRole(models.TextChoices):
 
 
 class InternStatusChoices(models.TextChoices):
+    ACTIVE = 'Active', 'Active'
+    INACTIVE = 'Inactive', 'Inactive'
     APPLIED = 'Applied', 'Applied'
     SELECTED = 'Selected', 'Selected'
     ONBOARDING = 'Onboarding', 'Onboarding'
-    ACTIVE = 'Active', 'Active'
     COMPLETED = 'Completed', 'Completed'
     TERMINATED = 'Terminated', 'Terminated'
 
@@ -78,6 +79,11 @@ class User(AbstractUser):
     gender = models.CharField(max_length=30, blank=True, default='')
     college = models.CharField(max_length=255, blank=True, default='')
     course = models.CharField(max_length=255, blank=True, default='')
+    course_name = models.CharField(max_length=255, blank=True, default='')
+    course_code = models.CharField(max_length=50, blank=True, default='')
+    batch = models.CharField(max_length=100, blank=True, default='')
+    joining_date = models.DateField(null=True, blank=True)
+    must_change_password = models.BooleanField(default=False)
     department = models.CharField(max_length=120, blank=True, default='Data Analytics')
     department_ref = models.ForeignKey(
         InternDepartment,
@@ -147,10 +153,20 @@ class User(AbstractUser):
             self.department = val
 
     def save(self, *args, **kwargs):
+        if self.course_name and not self.course:
+            self.course = self.course_name
+        elif self.course and not self.course_name:
+            self.course_name = self.course
         if self.course and not self.education_qualification:
             self.education_qualification = self.course
         elif self.education_qualification and not self.course:
             self.course = self.education_qualification
+            if not self.course_name:
+                self.course_name = self.education_qualification
+        if self.joining_date and not self.start_date:
+            self.start_date = self.joining_date
+        elif self.start_date and not self.joining_date:
+            self.joining_date = self.start_date
         if self.department_ref and not self.department:
             self.department = self.department_ref.name
         if self.program and not self.program_name:
@@ -169,7 +185,7 @@ class User(AbstractUser):
                     self.duration = calc
             except Exception:
                 pass
-        if self.intern_status in ['Terminated', 'Completed']:
+        if self.intern_status in ['Inactive', 'Terminated', 'Completed']:
             self.is_active_intern = False
         elif self.intern_status in ['Active', 'Onboarding', 'Selected', 'Applied']:
             self.is_active_intern = True
