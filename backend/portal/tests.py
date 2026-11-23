@@ -285,3 +285,288 @@ class InternshipPortalEndToEndTests(TestCase):
         self.assertEqual(reset_theme.status_code, 200)
         self.assertEqual(reset_theme.data["theme"]["primary_color"], "#2563EB")
 
+    def test_hr_intern_management_and_csv_excel_bulk_import_suite(self):
+        import io
+        import openpyxl
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        # 14. Verify HR permissions (Intern and Mentor cannot access HR import/export endpoints)
+        self.client.force_authenticate(user=self.intern)
+        self.assertEqual(self.client.get("/api/hr/interns/import/history/").status_code, 403)
+        self.assertEqual(self.client.get("/api/hr/interns/export/").status_code, 403)
+
+        self.client.force_authenticate(user=self.hr)
+
+        # 1. Add one intern manually with all new fields
+        manual_res = self.client.post(
+            "/api/hr/interns/",
+            {
+                "full_name": "Priya Nair",
+                "email": "priya.nair@test.local",
+                "phone": "+91 9876543210",
+                "gender": "Female",
+                "college": "IIT Madras",
+                "course": "B.Tech Data Science",
+                "department": "Data Analytics",
+                "internship_role": "Data Analytics Intern",
+                "start_date": "2026-06-01",
+                "end_date": "2026-08-24",
+                "assigned_mentor": self.mentor.id,
+                "hr_contact": self.hr.id,
+                "status": "Active",
+                "address": "Chennai, TN",
+            },
+            format="json",
+        )
+        self.assertEqual(manual_res.status_code, 201)
+        self.assertTrue(manual_res.data["intern_code"].startswith("INT-"))
+        self.assertIn("12 weeks", manual_res.data["internship_duration"])
+        self.assertEqual(manual_res.data["status"], "Active")
+
+        # Change Status action
+        status_res = self.client.post(
+            f"/api/hr/interns/{manual_res.data['id']}/change-status/",
+            {"status": "Onboarding"},
+            format="json",
+        )
+        self.assertEqual(status_res.status_code, 200)
+        self.assertEqual(status_res.data["status"], "Onboarding")
+
+        # 2. Import 10 interns through CSV
+        csv_lines = [
+            "Full Name,Email,Phone,Gender,College,Course,Department,Internship Role,Start Date,End Date,Assigned Mentor,Status,Address"
+        ]
+        for idx in range(1, 11):
+            csv_lines.append(
+                f"CSV Intern {idx},csv_intern_{idx}@test.local,+1 555-01{idx:02d},Male,MIT,M.S. Analytics,Data Analytics,Data Analyst Intern,2026-07-01,2026-09-30,David Mentor,Active,Boston MA"
+            )
+        csv_file = SimpleUploadedFile(
+            "ten_interns.csv",
+            "\n".join(csv_lines).encode("utf-8"),
+            content_type="text/csv",
+        )
+        prev_csv = self.client.post("/api/hr/interns/import/preview/", {"file": csv_file}, format="multipart")
+        self.assertEqual(prev_csv.status_code, 200)
+        self.assertEqual(prev_csv.data["total_records"], 10)
+        self.assertEqual(prev_csv.data["validation"]["valid_count"], 10)
+
+        conf_csv = self.client.post(
+            "/api/hr/interns/import/confirm/",
+            {
+                "rows": prev_csv.data["raw_rows"],
+                "column_mapping": prev_csv.data["column_mapping"],
+                "file_name": "ten_interns.csv",
+                "file_type": "CSV",
+                "skip_invalid": True,
+                "duplicate_action": "skip",
+            },
+            format="json",
+        )
+        self.assertEqual(conf_csv.status_code, 200)
+        self.assertEqual(conf_csv.data["successful_records"], 10)
+
+        # 3. Import 100 interns through Excel (.xlsx)
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.append([
+            "Full Name", "Email", "Phone", "College", "Course",
+            "Department", "Internship Role", "Start Date", "End Date",
+            "Assigned Mentor", "Status"
+        ])
+        for idx in range(1, 101):
+            ws.append([
+                f"Excel Intern {idx}",
+                f"excel_intern_{idx}@test.local",
+                f"+1 555-80{idx:03d}",
+                "Stanford University",
+                "B.S. Computer Science",
+                "Software Engineering",
+                "SWE Intern",
+                "2026-06-15",
+                "2026-09-15",
+                "David Mentor",
+                "Selected",
+            ])
+        xlsx_buf = io.BytesIO()
+        wb.save(xlsx_buf)
+        xlsx_buf.seek(0)
+        xlsx_file = SimpleUploadedFile(
+            "hundred_interns.xlsx",
+            xlsx_buf.read(),
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        prev_xlsx = self.client.post("/api/hr/interns/import/preview/", {"file": xlsx_file}, format="multipart")
+        self.assertEqual(prev_xlsx.status_code, 200)
+        self.assertEqual(prev_xlsx.data["total_records"], 100)
+        self.assertEqual(prev_xlsx.data["validation"]["valid_count"], 100)
+
+        conf_xlsx = self.client.post(
+            "/api/hr/interns/import/confirm/",
+            {
+                "rows": prev_xlsx.data["raw_rows"],
+                "column_mapping": prev_xlsx.data["column_mapping"],
+                "file_name": "hundred_interns.xlsx",
+                "file_type": "XLSX",
+                "skip_invalid": True,
+                "duplicate_action": "skip",
+            },
+            format="json",
+        )
+        self.assertEqual(conf_xlsx.status_code, 200)
+        self.assertEqual(conf_xlsx.data["successful_records"], 100)
+
+        # 4, 5, 6, 7, 8, 9, 11, 15. Test different column headings, missing fields, duplicate emails,
+        # invalid email format, incorrect date format, start > end date, transactional abort, and skip_invalid
+        mixed_rows = [
+            # Row 1: Valid with custom column headings
+            {
+                "Candidate Name": "Custom Header Intern",
+                "Candidate Email": "custom.header@test.local",
+                "Mobile Number": "+1 555-9001",
+                "University": "UC Berkeley",
+                "Degree": "M.S. AI",
+                "Domain": "Artificial Intelligence & ML",
+                "Track": "ML Intern",
+                "Joining Date": "2026-07-01",
+                "Completion Date": "2026-10-01",
+                "Team Lead": "David Mentor",
+                "Current Status": "Onboarding",
+            },
+            # Row 2: Missing required fields (missing email and phone)
+            {
+                "Candidate Name": "Missing Fields User",
+                "Candidate Email": "",
+                "Mobile Number": "",
+                "Domain": "Data Analytics",
+            },
+            # Row 3: In-file duplicate email (same as Row 1)
+            {
+                "Candidate Name": "Duplicate In File",
+                "Candidate Email": "custom.header@test.local",
+                "Mobile Number": "+1 555-9002",
+                "Domain": "Data Analytics",
+            },
+            # Row 4: Invalid email address
+            {
+                "Candidate Name": "Bad Email User",
+                "Candidate Email": "not-an-email-address",
+                "Mobile Number": "+1 555-9003",
+                "Domain": "Data Analytics",
+            },
+            # Row 5: Incorrect date format and start > end date
+            {
+                "Candidate Name": "Bad Date User",
+                "Candidate Email": "baddate@test.local",
+                "Mobile Number": "+1 555-9004",
+                "Domain": "Data Analytics",
+                "Joining Date": "2026-12-01",
+                "Completion Date": "2026-06-01",
+            },
+            # Row 6: Existing DB duplicate (priya.nair@test.local)
+            {
+                "Candidate Name": "Priya Nair Updated",
+                "Candidate Email": "priya.nair@test.local",
+                "Mobile Number": "+91 9876500000",
+                "University": "IIT Bombay",
+                "Degree": "M.Tech AI",
+                "Domain": "Artificial Intelligence & ML",
+                "Current Status": "Active",
+            },
+        ]
+
+        val_res = self.client.post(
+            "/api/hr/interns/import/validate/",
+            {"rows": mixed_rows},
+            format="json",
+        )
+        self.assertEqual(val_res.status_code, 200)
+        self.assertEqual(val_res.data["total_records"], 6)
+        self.assertEqual(val_res.data["valid_count"], 1)
+        self.assertEqual(val_res.data["invalid_count"], 4)
+        self.assertEqual(val_res.data["in_file_duplicate_count"], 1)
+        self.assertEqual(val_res.data["db_duplicate_count"], 1)
+        self.assertEqual(val_res.data["missing_required_count"], 1)
+
+        # 15. Verify failed import with skip_invalid=False does NOT create partial records
+        count_before_abort = User.objects.filter(role=UserRole.INTERN).count()
+        abort_res = self.client.post(
+            "/api/hr/interns/import/confirm/",
+            {
+                "rows": mixed_rows,
+                "file_name": "mixed_abort.csv",
+                "file_type": "CSV",
+                "skip_invalid": False,
+                "duplicate_action": "skip",
+            },
+            format="json",
+        )
+        self.assertEqual(abort_res.status_code, 400)
+        self.assertEqual(User.objects.filter(role=UserRole.INTERN).count(), count_before_abort)
+
+        # 9 & 11. Import with skip_invalid=True and duplicate_action='skip' -> imports 1 valid, skips 1 DB dup, fails 4 with error report
+        skip_res = self.client.post(
+            "/api/hr/interns/import/confirm/",
+            {
+                "rows": mixed_rows,
+                "file_name": "mixed_skip.csv",
+                "file_type": "CSV",
+                "skip_invalid": True,
+                "duplicate_action": "skip",
+            },
+            format="json",
+        )
+        self.assertEqual(skip_res.status_code, 200)
+        self.assertEqual(skip_res.data["successful_records"], 1)
+        self.assertEqual(skip_res.data["skipped_records"], 1)
+        self.assertEqual(skip_res.data["failed_records"], 4)
+        self.assertEqual(len(skip_res.data["failed_rows"]), 4)
+        self.assertTrue(all("error_reason" in r for r in skip_res.data["failed_rows"]))
+
+        # 10. Update existing records requires explicit confirmation
+        unconfirmed_update = self.client.post(
+            "/api/hr/interns/import/confirm/",
+            {
+                "rows": [mixed_rows[5]],
+                "file_name": "update_priya.csv",
+                "file_type": "CSV",
+                "skip_invalid": True,
+                "duplicate_action": "update",
+                "confirm_update_existing": False,
+            },
+            format="json",
+        )
+        self.assertEqual(unconfirmed_update.status_code, 400)
+
+        confirmed_update = self.client.post(
+            "/api/hr/interns/import/confirm/",
+            {
+                "rows": [mixed_rows[5]],
+                "file_name": "update_priya.csv",
+                "file_type": "CSV",
+                "skip_invalid": True,
+                "duplicate_action": "update",
+                "confirm_update_existing": True,
+            },
+            format="json",
+        )
+        self.assertEqual(confirmed_update.status_code, 200)
+        self.assertEqual(confirmed_update.data["updated_records"], 1)
+        priya_db = User.objects.get(email="priya.nair@test.local")
+        self.assertEqual(priya_db.college, "IIT Bombay")
+
+        # 12. View import history
+        hist_res = self.client.get("/api/hr/interns/import/history/")
+        self.assertEqual(hist_res.status_code, 200)
+        self.assertGreaterEqual(len(hist_res.data), 4)
+
+        # 13. Export intern records (CSV & XLSX)
+        exp_csv = self.client.get("/api/hr/interns/export/?format=csv")
+        self.assertEqual(exp_csv.status_code, 200)
+        self.assertIn("text/csv", exp_csv["Content-Type"])
+        self.assertIn("Priya Nair Updated", exp_csv.content.decode("utf-8"))
+
+        exp_xlsx = self.client.get("/api/hr/interns/export/?format=xlsx")
+        self.assertEqual(exp_xlsx.status_code, 200)
+        self.assertIn("spreadsheetml.sheet", exp_xlsx["Content-Type"])
+
+

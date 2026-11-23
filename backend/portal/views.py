@@ -8,18 +8,26 @@ from django.db.models import Count, Q, Avg
 from django.shortcuts import get_object_or_404
 from datetime import timedelta
 
+from django.http import HttpResponse
 from .models import (
     User, UserRole, Project, ProjectAssignment, ProjectAssignmentStatus,
     ExtensionRequest, PresentationSchedule, Certificate, Notification,
-    WebsiteBranding, WebsiteTheme
+    WebsiteBranding, WebsiteTheme, InternDepartment, InternshipProgram,
+    ImportHistory, InternStatusChoices
 )
 from .serializers import (
     UserSerializer, MentorCreateSerializer, InternCreateSerializer,
     ProjectSerializer, ProjectAssignmentSerializer, ExtensionRequestSerializer,
     PresentationScheduleSerializer, CertificateSerializer, NotificationSerializer,
-    WebsiteBrandingSerializer, WebsiteThemeSerializer
+    WebsiteBrandingSerializer, WebsiteThemeSerializer,
+    InternDepartmentSerializer, InternshipProgramSerializer, ImportHistorySerializer
 )
 from .services import send_notification_and_email, generate_certificate_pdf
+from .intern_import_service import (
+    SYSTEM_FIELDS, ensure_default_departments_and_programs,
+    auto_detect_column_mapping, parse_uploaded_table_file,
+    validate_import_rows, execute_import_confirm, sanitize_spreadsheet_cell
+)
 
 
 # --- Custom Permissions ---
@@ -129,13 +137,48 @@ class HRInternViewSet(viewsets.ModelViewSet):
     serializer_class = UserSerializer
 
     def get_queryset(self):
-        return User.objects.filter(role=UserRole.INTERN).select_related('assigned_mentor').order_by('-id')
+        ensure_default_departments_and_programs()
+        qs = User.objects.filter(role=UserRole.INTERN).select_related(
+            'assigned_mentor', 'department_ref', 'program', 'hr_contact'
+        ).order_by('-id')
+        search = (self.request.query_params.get('search') or '').strip()
+        dept = (self.request.query_params.get('department') or '').strip()
+        status_param = (self.request.query_params.get('status') or '').strip()
+        start_after = (self.request.query_params.get('start_date') or '').strip()
+        end_before = (self.request.query_params.get('end_date') or '').strip()
+
+        if search:
+            qs = qs.filter(
+                Q(first_name__icontains=search)
+                | Q(last_name__icontains=search)
+                | Q(username__icontains=search)
+                | Q(email__icontains=search)
+                | Q(intern_code__icontains=search)
+                | Q(college__icontains=search)
+                | Q(internship_role__icontains=search)
+            )
+        if dept:
+            if dept.isdigit():
+                qs = qs.filter(department_ref_id=int(dept))
+            else:
+                qs = qs.filter(Q(department_ref__name__iexact=dept) | Q(department__iexact=dept))
+        if status_param:
+            qs = qs.filter(intern_status__iexact=status_param)
+        if start_after:
+            qs = qs.filter(start_date__gte=start_after)
+        if end_before:
+            qs = qs.filter(end_date__lte=end_before)
+        return qs
 
     def create(self, request, *args, **kwargs):
+        ensure_default_departments_and_programs()
         serializer = InternCreateSerializer(data=request.data)
         if serializer.is_valid():
-            intern = serializer.save()
-            
+            intern = serializer.save(created_by=request.user)
+            if not intern.hr_contact:
+                intern.hr_contact = request.user
+                intern.save(update_fields=['hr_contact'])
+
             # Send automated welcome notification & email
             send_notification_and_email(
                 recipient=intern,
@@ -149,6 +192,20 @@ class HRInternViewSet(viewsets.ModelViewSet):
             )
             return Response(UserSerializer(intern).data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=True, methods=['post'], url_path='change-status')
+    def change_status(self, request, pk=None):
+        intern = self.get_object()
+        new_status = (request.data.get('status') or '').strip()
+        valid_map = {c[0].lower(): c[0] for c in InternStatusChoices.choices}
+        if new_status.lower() not in valid_map:
+            return Response(
+                {'detail': f"Invalid status '{new_status}'. Choose from: {', '.join(valid_map.values())}"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        intern.intern_status = valid_map[new_status.lower()]
+        intern.save()
+        return Response(UserSerializer(intern).data)
 
     @action(detail=True, methods=['post'], url_path='assign-mentor')
     def assign_mentor(self, request, pk=None):
@@ -917,3 +974,204 @@ class AdminThemeResetView(APIView):
         published = get_or_create_published_theme()
         serialized = WebsiteThemeSerializer(published).data
         return Response({'status': 'reset', 'theme': serialized, **serialized})
+
+
+# --- HR Intern Departments, Programs, Bulk CSV/Excel Import & Export ---
+
+class HRDepartmentViewSet(viewsets.ModelViewSet):
+    permission_classes = [IsHR]
+    serializer_class = InternDepartmentSerializer
+
+    def get_queryset(self):
+        ensure_default_departments_and_programs()
+        return InternDepartment.objects.all().order_by('name')
+
+
+class HRProgramViewSet(viewsets.ModelViewSet):
+    permission_classes = [IsHR]
+    serializer_class = InternshipProgramSerializer
+
+    def get_queryset(self):
+        ensure_default_departments_and_programs()
+        return InternshipProgram.objects.select_related('department_ref').all().order_by('title')
+
+
+class HRInternImportPreviewView(APIView):
+    permission_classes = [IsHR]
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
+
+    def post(self, request):
+        ensure_default_departments_and_programs()
+        file_obj = request.FILES.get('file')
+        if file_obj:
+            try:
+                headers, rows, file_type = parse_uploaded_table_file(file_obj, file_obj.name)
+            except ValueError as e:
+                return Response({'detail': str(e), 'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+            file_name = file_obj.name
+        else:
+            rows = request.data.get('rows') or []
+            if not isinstance(rows, list) or len(rows) == 0:
+                return Response(
+                    {'detail': 'Please upload a valid CSV or Excel file or provide rows.'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            headers = request.data.get('headers') or list(rows[0].keys())
+            file_name = request.data.get('file_name', 'interns_import.csv')
+            file_type = request.data.get('file_type', 'CSV')
+
+        detected_mapping = auto_detect_column_mapping(headers)
+        validation = validate_import_rows(rows, column_mapping=detected_mapping)
+
+        return Response({
+            'file_name': file_name,
+            'file_type': file_type,
+            'headers': headers,
+            'system_fields': SYSTEM_FIELDS,
+            'column_mapping': detected_mapping,
+            'total_records': len(rows),
+            'raw_rows': rows,
+            'validation': validation,
+        })
+
+
+class HRInternImportValidateView(APIView):
+    permission_classes = [IsHR]
+
+    def post(self, request):
+        rows = request.data.get('rows') or []
+        column_mapping = request.data.get('column_mapping') or {}
+        if not isinstance(rows, list):
+            return Response({'detail': 'Invalid rows payload.'}, status=status.HTTP_400_BAD_REQUEST)
+        validation = validate_import_rows(rows, column_mapping=column_mapping)
+        return Response(validation)
+
+
+class HRInternImportConfirmView(APIView):
+    permission_classes = [IsHR]
+
+    def post(self, request):
+        rows = request.data.get('rows') or []
+        column_mapping = request.data.get('column_mapping') or None
+        file_name = request.data.get('file_name') or 'interns_import.csv'
+        file_type = request.data.get('file_type') or 'CSV'
+        skip_invalid = bool(request.data.get('skip_invalid', True))
+        duplicate_action = request.data.get('duplicate_action') or 'skip'
+        confirm_update_existing = bool(request.data.get('confirm_update_existing', False))
+
+        if not isinstance(rows, list) or len(rows) == 0:
+            return Response({'detail': 'No records provided to import.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if duplicate_action == 'update' and not confirm_update_existing:
+            return Response(
+                {'detail': 'Explicit confirmation (confirm_update_existing=true) is required to update existing intern records.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        result = execute_import_confirm(
+            raw_rows=rows,
+            column_mapping=column_mapping,
+            file_name=file_name,
+            file_type=file_type,
+            skip_invalid=skip_invalid,
+            duplicate_action=duplicate_action,
+            confirm_update_existing=confirm_update_existing,
+            imported_by=request.user,
+        )
+        if result.get('status') == 'aborted':
+            return Response(result, status=status.HTTP_400_BAD_REQUEST)
+        return Response(result, status=status.HTTP_200_OK)
+
+
+class HRInternImportHistoryView(APIView):
+    permission_classes = [IsHR]
+
+    def get(self, request):
+        histories = ImportHistory.objects.all().order_by('-imported_at')[:100]
+        return Response(ImportHistorySerializer(histories, many=True).data)
+
+
+class HRInternExportView(APIView):
+    permission_classes = [IsHR]
+
+    def perform_content_negotiation(self, request, force=False):
+        return (self.get_renderers()[0], '*/*')
+
+    def get(self, request):
+        ensure_default_departments_and_programs()
+        export_format = (request.query_params.get('format') or request.query_params.get('export_format') or 'csv').lower()
+        interns = User.objects.filter(role=UserRole.INTERN).select_related(
+            'assigned_mentor', 'department_ref', 'hr_contact'
+        ).order_by('id')
+
+        dept = (request.query_params.get('department') or '').strip()
+        status_param = (request.query_params.get('status') or '').strip()
+        if dept:
+            interns = interns.filter(Q(department_ref__name__iexact=dept) | Q(department__iexact=dept))
+        if status_param:
+            interns = interns.filter(intern_status__iexact=status_param)
+
+        headers = [
+            'Intern ID', 'Full Name', 'Email', 'Phone', 'Gender',
+            'College / University', 'Course / Degree', 'Department',
+            'Internship Role', 'Start Date', 'End Date', 'Duration',
+            'Assigned Mentor', 'Status', 'Address'
+        ]
+
+        rows_data = []
+        for idx, i in enumerate(interns, start=1):
+            code = i.intern_code or f"INT-{timezone.now().year}-{i.id:04d}"
+            full_name = f"{i.first_name} {i.last_name}".strip() or i.username
+            dept_name = i.department_ref.name if i.department_ref else (i.department or 'Data Analytics')
+            mentor_name = (
+                f"{i.assigned_mentor.first_name} {i.assigned_mentor.last_name}".strip() or i.assigned_mentor.username
+            ) if i.assigned_mentor else 'Unassigned'
+
+            rows_data.append([
+                sanitize_spreadsheet_cell(code),
+                sanitize_spreadsheet_cell(full_name),
+                sanitize_spreadsheet_cell(i.email),
+                sanitize_spreadsheet_cell(i.phone),
+                sanitize_spreadsheet_cell(i.gender),
+                sanitize_spreadsheet_cell(i.college),
+                sanitize_spreadsheet_cell(i.course or i.education_qualification),
+                sanitize_spreadsheet_cell(dept_name),
+                sanitize_spreadsheet_cell(i.internship_role or 'Data Analytics Intern'),
+                sanitize_spreadsheet_cell(i.start_date.isoformat() if i.start_date else ''),
+                sanitize_spreadsheet_cell(i.end_date.isoformat() if i.end_date else ''),
+                sanitize_spreadsheet_cell(i.internship_duration),
+                sanitize_spreadsheet_cell(mentor_name),
+                sanitize_spreadsheet_cell(i.intern_status or 'Active'),
+                sanitize_spreadsheet_cell(i.address),
+            ])
+
+        if export_format in ('xlsx', 'excel'):
+            import io as _io
+            import openpyxl
+            wb = openpyxl.Workbook()
+            ws = wb.active
+            ws.title = 'Interns'
+            ws.append(headers)
+            for row in rows_data:
+                ws.append(row)
+            buf = _io.BytesIO()
+            wb.save(buf)
+            buf.seek(0)
+            response = HttpResponse(
+                buf.getvalue(),
+                content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+            )
+            response['Content-Disposition'] = 'attachment; filename="interns_export.xlsx"'
+            return response
+
+        import csv as _csv
+        import io as _io
+        str_buf = _io.StringIO()
+        writer = _csv.writer(str_buf)
+        writer.writerow(headers)
+        for row in rows_data:
+            writer.writerow(row)
+        response = HttpResponse(str_buf.getvalue(), content_type='text/csv; charset=utf-8')
+        response['Content-Disposition'] = 'attachment; filename="interns_export.csv"'
+        return response
+

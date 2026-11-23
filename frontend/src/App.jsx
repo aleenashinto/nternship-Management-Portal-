@@ -14,6 +14,9 @@ import HRDashboard from './pages/hr/HRDashboard';
 import MentorsList from './pages/hr/MentorsList';
 import InternsList from './pages/hr/InternsList';
 import CertificatesList from './pages/hr/CertificatesList';
+import HRImportInterns from './pages/hr/HRImportInterns';
+import HRImportHistory from './pages/hr/HRImportHistory';
+import HRDepartmentsAndPrograms from './pages/hr/HRDepartmentsAndPrograms';
 
 // Mentor Pages
 import MentorDashboard from './pages/mentor/MentorDashboard';
@@ -97,6 +100,11 @@ function App() {
               <Route path="/hr/dashboard" element={<HRDashboard />} />
               <Route path="/hr/mentors" element={<MentorsList />} />
               <Route path="/hr/interns" element={<InternsList />} />
+              <Route path="/hr/interns/add" element={<InternsList standaloneAddMode={true} />} />
+              <Route path="/hr/interns/import" element={<HRImportInterns />} />
+              <Route path="/hr/departments" element={<HRDepartmentsAndPrograms initialView="departments" />} />
+              <Route path="/hr/programs" element={<HRDepartmentsAndPrograms initialView="programs" />} />
+              <Route path="/hr/import-history" element={<HRImportHistory />} />
               <Route path="/hr/certificates" element={<CertificatesList />} />
 
               {/* Mentor Module */}

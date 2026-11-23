@@ -8,6 +8,9 @@ from rest_framework_simplejwt.views import (
 from .views import (
     CurrentUserProfileView,
     HRDashboardView, HRMentorViewSet, HRInternViewSet, HRCertificatesViewSet,
+    HRDepartmentViewSet, HRProgramViewSet,
+    HRInternImportPreviewView, HRInternImportValidateView,
+    HRInternImportConfirmView, HRInternImportHistoryView, HRInternExportView,
     MentorDashboardView, MentorProjectsViewSet, MentorInternsView,
     MentorAssignmentsViewSet, MentorExtensionRequestsViewSet, MentorPresentationsViewSet,
     InternProfileView, InternAssignmentsViewSet, InternExtensionViewSet,
@@ -24,6 +27,8 @@ router = DefaultRouter()
 router.register(r'hr/mentors', HRMentorViewSet, basename='hr-mentors')
 router.register(r'hr/interns', HRInternViewSet, basename='hr-interns')
 router.register(r'hr/certificates', HRCertificatesViewSet, basename='hr-certificates')
+router.register(r'hr/departments', HRDepartmentViewSet, basename='hr-departments')
+router.register(r'hr/programs', HRProgramViewSet, basename='hr-programs')
 
 # Mentor ViewSets
 router.register(r'mentor/projects', MentorProjectsViewSet, basename='mentor-projects')
@@ -50,6 +55,11 @@ urlpatterns = [
 
     # HR Views
     path('hr/dashboard/', HRDashboardView.as_view(), name='hr-dashboard'),
+    path('hr/interns/import/preview/', HRInternImportPreviewView.as_view(), name='hr-interns-import-preview'),
+    path('hr/interns/import/validate/', HRInternImportValidateView.as_view(), name='hr-interns-import-validate'),
+    path('hr/interns/import/confirm/', HRInternImportConfirmView.as_view(), name='hr-interns-import-confirm'),
+    path('hr/interns/import/history/', HRInternImportHistoryView.as_view(), name='hr-interns-import-history'),
+    path('hr/interns/export/', HRInternExportView.as_view(), name='hr-interns-export'),
 
     # Mentor Views
     path('mentor/dashboard/', MentorDashboardView.as_view(), name='mentor-dashboard'),

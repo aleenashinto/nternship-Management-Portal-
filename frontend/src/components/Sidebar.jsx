@@ -4,7 +4,8 @@ import { useAuth } from '../context/AuthContext';
 import {
   LayoutDashboard, Users, UserCheck, Award, FolderKanban,
   FileCheck2, Clock, Calendar, GraduationCap, FileText,
-  Image as ImageIcon, Palette, Type, Sliders
+  Image as ImageIcon, Palette, Type, Sliders,
+  UserPlus, Upload, Building2, BookOpen, History
 } from 'lucide-react';
 
 const Sidebar = ({ isOpen, onClose }) => {
@@ -13,11 +14,25 @@ const Sidebar = ({ isOpen, onClose }) => {
 
   const role = user.role || (window.location.pathname.startsWith('/admin') ? 'ADMIN' : window.location.pathname.startsWith('/mentor') ? 'MENTOR' : window.location.pathname.startsWith('/intern') ? 'INTERN' : 'HR');
 
-  const hrLinks = [
+  const hrCoreLinks = [
     { to: '/hr/dashboard', label: 'HR Dashboard', icon: LayoutDashboard },
     { to: '/hr/mentors', label: 'Mentor Accounts', icon: UserCheck },
-    { to: '/hr/interns', label: 'Intern Registry', icon: Users },
     { to: '/hr/certificates', label: 'Certificate Approvals', icon: Award },
+  ];
+
+  const hrManagementLinks = [
+    { to: '/hr/interns', label: 'Intern List', icon: Users, end: true },
+    { to: '/hr/interns/add', label: 'Add New Intern', icon: UserPlus },
+    { to: '/hr/interns/import', label: 'Import Interns (CSV / Excel)', icon: Upload },
+    { to: '/hr/departments', label: 'Intern Departments', icon: Building2 },
+    { to: '/hr/programs', label: 'Internship Programs', icon: BookOpen },
+    { to: '/hr/import-history', label: 'Import History', icon: History },
+  ];
+
+  const hrLinks = [
+    ...hrCoreLinks,
+    { header: 'HR Management' },
+    ...hrManagementLinks,
   ];
 
   const mentorLinks = [
@@ -114,6 +129,7 @@ const Sidebar = ({ isOpen, onClose }) => {
                 <NavLink
                   key={item.to}
                   to={item.to}
+                  end={item.end}
                   onClick={() => onClose && onClose()}
                   className={navClass}
                 >

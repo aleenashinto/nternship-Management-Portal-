@@ -130,7 +130,14 @@ const HRDashboard = () => {
             Real-time management KPIs, mentor allocations, and certificate approval governance.
           </p>
         </div>
-        <div className="flex items-center space-x-3">
+        <div className="flex flex-wrap items-center gap-2.5">
+          <Link
+            to="/hr/interns/import"
+            className="inline-flex items-center space-x-2 px-4 py-2.5 rounded-xl text-sm font-medium text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 transition-colors"
+          >
+            <FileText className="w-4 h-4" />
+            <span>Import CSV / Excel</span>
+          </Link>
           <button
             onClick={() => setIsMentorModalOpen(true)}
             className="inline-flex items-center space-x-2 px-4 py-2.5 rounded-xl text-sm font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 transition-colors"

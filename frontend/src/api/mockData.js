@@ -1,5 +1,12 @@
 // Comprehensive Client-Side Demo Mock Data Engine
 // Allows the deployed Vercel frontend to run with full interactivity even when deployed purely as a static SPA.
+import {
+  SYSTEM_FIELDS,
+  autoDetectColumnMapping,
+  validateInternRows,
+  calculateDuration,
+  sanitizeSpreadsheetCell,
+} from '../utils/internSpreadsheet';
 
 const INITIAL_USERS = {
   admin: {
@@ -40,6 +47,7 @@ const INITIAL_USERS = {
   },
   intern_emma: {
     id: 4,
+    intern_code: 'INT-2026-0001',
     username: 'intern_emma',
     email: 'emma.watson@example.com',
     first_name: 'Emma',
@@ -47,15 +55,29 @@ const INITIAL_USERS = {
     full_name: 'Emma Watson',
     role: 'INTERN',
     phone: '+1 (555) 567-8901',
+    gender: 'Female',
+    college: 'Harvard University',
+    course: 'M.S. in Data Analytics',
+    department: 'Data Analytics',
+    department_name: 'Data Analytics',
+    internship_role: 'Data Analytics Intern',
+    start_date: '2026-06-01',
+    end_date: '2026-08-31',
+    internship_duration: '13 weeks (91 days)',
     address: '12 Ocean Drive, Cambridge, MA',
     education_qualification: 'M.S. in Data Analytics',
     source: 'Campus Drive',
     assigned_mentor: 3,
     assigned_mentor_name: 'David Miller',
+    hr_contact: 2,
+    hr_contact_name: 'Sarah Connor',
+    status: 'Active',
+    intern_status: 'Active',
     is_active_intern: true,
   },
   intern_john: {
     id: 5,
+    intern_code: 'INT-2026-0002',
     username: 'intern_john',
     email: 'john.doe@example.com',
     first_name: 'John',
@@ -64,15 +86,29 @@ const INITIAL_USERS = {
     role: 'INTERN',
     phone: '+1 (555) 456-7890',
     phone2: '+1 (555) 456-7891',
+    gender: 'Male',
+    college: 'Stanford University',
+    course: 'B.S. in Computer Science',
+    department: 'Software Engineering',
+    department_name: 'Software Engineering',
+    internship_role: 'Full-Stack Developer Intern',
+    start_date: '2026-06-15',
+    end_date: '2026-09-15',
+    internship_duration: '13 weeks (92 days)',
     address: '742 Evergreen Terrace, Springfield',
     education_qualification: 'B.S. in Computer Science',
     source: 'Direct',
     assigned_mentor: 3,
     assigned_mentor_name: 'David Miller',
+    hr_contact: 2,
+    hr_contact_name: 'Sarah Connor',
+    status: 'Active',
+    intern_status: 'Active',
     is_active_intern: true,
   },
   intern_alex: {
     id: 6,
+    intern_code: 'INT-2026-0003',
     username: 'intern_alex',
     email: 'alex.smith@example.com',
     first_name: 'Alex',
@@ -80,11 +116,24 @@ const INITIAL_USERS = {
     full_name: 'Alex Smith',
     role: 'INTERN',
     phone: '+1 (555) 678-9012',
+    gender: 'Male',
+    college: 'UC Berkeley',
+    course: 'B.Tech in Information Technology',
+    department: 'Artificial Intelligence & ML',
+    department_name: 'Artificial Intelligence & ML',
+    internship_role: 'AI & ML Intern',
+    start_date: '2026-07-01',
+    end_date: '2026-09-30',
+    internship_duration: '13 weeks (91 days)',
     address: '89 Silicon Blvd, San Jose, CA',
     education_qualification: 'B.Tech in Information Technology',
     source: 'Referral',
     assigned_mentor: null,
     assigned_mentor_name: null,
+    hr_contact: 2,
+    hr_contact_name: 'Sarah Connor',
+    status: 'Onboarding',
+    intern_status: 'Onboarding',
     is_active_intern: true,
   },
 };
@@ -442,27 +491,65 @@ export const handleMockRequest = async (url, method = 'get', data = null) => {
     }
   }
 
-  // 5. HR Interns (Add, View, Edit, Delete)
+  // 5. HR Interns (Add, View, Edit, Delete, Change Status)
   if (cleanUrl === '/hr/interns') {
     const current = getStore('interns', Object.values(INITIAL_USERS).filter(u => u.role === 'INTERN'));
     if (method.toLowerCase() === 'post') {
       const mentors = getStore('mentors', Object.values(INITIAL_USERS).filter(u => u.role === 'MENTOR'));
-      const mId = parsedData.assigned_mentor ? parseInt(parsedData.assigned_mentor) : null;
+      const mId = parsedData.assigned_mentor || parsedData.mentor_id ? parseInt(parsedData.assigned_mentor || parsedData.mentor_id) : null;
       const mObj = mentors.find(m => m.id === mId);
+      const rawFull = (parsedData.full_name || `${parsedData.first_name || ''} ${parsedData.last_name || ''}`).trim();
+      const parts = rawFull.split(' ');
+      const firstName = parsedData.first_name || parts[0] || 'Intern';
+      const lastName = parsedData.last_name || parts.slice(1).join(' ') || '';
+      const nextNum = current.length + 1;
+      const statusVal = parsedData.status || parsedData.intern_status || 'Active';
+      const courseVal = parsedData.course || parsedData.education_qualification || '';
+      const deptVal = parsedData.department_name || parsedData.department || 'Data Analytics';
+      const durationVal = parsedData.internship_duration || calculateDuration(parsedData.start_date, parsedData.end_date);
       const newI = {
         id: Date.now(),
+        intern_code: parsedData.intern_code || `INT-2026-${String(nextNum).padStart(4, '0')}`,
+        username: parsedData.username || (parsedData.email ? parsedData.email.split('@')[0].replace(/[^a-zA-Z0-9_]/g, '_') : `intern_${nextNum}`),
         ...parsedData,
+        first_name: firstName,
+        last_name: lastName,
+        full_name: rawFull || parsedData.username || `Intern ${nextNum}`,
+        course: courseVal,
+        education_qualification: courseVal,
+        department: deptVal,
+        department_name: deptVal,
+        internship_role: parsedData.internship_role || 'Data Analytics Intern',
+        internship_duration: durationVal,
         assigned_mentor: mId,
         assigned_mentor_name: mObj ? (mObj.full_name || mObj.username) : null,
-        full_name: `${parsedData.first_name || ''} ${parsedData.last_name || ''}`.trim() || parsedData.username,
+        hr_contact: parsedData.hr_contact || 2,
+        hr_contact_name: parsedData.hr_contact_name || 'Sarah Connor',
+        status: statusVal,
+        intern_status: statusVal,
         role: 'INTERN',
-        is_active_intern: true,
+        is_active_intern: !['Terminated', 'Completed'].includes(statusVal),
+        created_at: new Date().toISOString(),
       };
-      current.push(newI);
+      current.unshift(newI);
       setStore('interns', current);
       return newI;
     }
     return current;
+  }
+
+  // 5b. Change Intern Status
+  if (cleanUrl.match(/\/hr\/interns\/\d+\/change-status/)) {
+    const internId = parseInt(cleanUrl.split('/')[3]);
+    const current = getStore('interns', Object.values(INITIAL_USERS).filter(u => u.role === 'INTERN'));
+    const target = current.find(i => i.id === internId);
+    if (target) {
+      target.status = parsedData.status || 'Active';
+      target.intern_status = target.status;
+      target.is_active_intern = !['Terminated', 'Completed'].includes(target.status);
+      setStore('interns', current);
+      return target;
+    }
   }
 
   // 6. Assign Mentor
@@ -492,7 +579,18 @@ export const handleMockRequest = async (url, method = 'get', data = null) => {
       if (target) {
         const mentors = getStore('mentors', Object.values(INITIAL_USERS).filter(u => u.role === 'MENTOR'));
         Object.assign(target, parsedData);
-        target.full_name = `${target.first_name || ''} ${target.last_name || ''}`.trim() || target.username;
+        if (parsedData.full_name && !parsedData.first_name) {
+          const pts = parsedData.full_name.trim().split(' ');
+          target.first_name = pts[0] || '';
+          target.last_name = pts.slice(1).join(' ') || '';
+        }
+        target.full_name = target.full_name || `${target.first_name || ''} ${target.last_name || ''}`.trim() || target.username;
+        if (parsedData.course) target.education_qualification = parsedData.course;
+        if (parsedData.department) target.department_name = parsedData.department;
+        if (parsedData.status) target.intern_status = parsedData.status;
+        if (parsedData.start_date || parsedData.end_date) {
+          target.internship_duration = calculateDuration(target.start_date, target.end_date) || target.internship_duration;
+        }
         if ('assigned_mentor' in parsedData) {
           const mId = parsedData.assigned_mentor ? parseInt(parsedData.assigned_mentor) : null;
           target.assigned_mentor = mId;
@@ -1225,6 +1323,355 @@ export const handleMockRequest = async (url, method = 'get', data = null) => {
     });
     setStore('activity_logs', logs);
     return { status: 'reset', theme: resetTheme };
+  }
+
+  // 22. HR Intern Departments, Programs & Bulk CSV/Excel Import & History
+  const DEFAULT_DEPARTMENTS = [
+    { id: 1, name: 'Data Analytics', code: 'DATA', description: 'Business Intelligence, SQL, Python, and Statistical Modeling', head_of_department: 'David Miller', is_active: true, intern_count: 2 },
+    { id: 2, name: 'Software Engineering', code: 'SWE', description: 'Full-Stack Web, API Architecture, and Microservices', head_of_department: 'David Miller', is_active: true, intern_count: 1 },
+    { id: 3, name: 'Artificial Intelligence & ML', code: 'AIML', description: 'Deep Learning, NLP, Predictive Modeling, and MLOps', head_of_department: 'David Miller', is_active: true, intern_count: 1 },
+    { id: 4, name: 'Cloud & DevOps', code: 'CLOUD', description: 'Cloud Infrastructure, CI/CD Pipelines, and Kubernetes', head_of_department: 'Sarah Connor', is_active: true, intern_count: 0 },
+    { id: 5, name: 'Product & UI/UX Design', code: 'DESIGN', description: 'User Research, Design Systems, and Interactive Prototyping', head_of_department: 'Sarah Connor', is_active: true, intern_count: 0 },
+    { id: 6, name: 'Cybersecurity', code: 'SEC', description: 'Application Security, IAM Governance, and Threat Analysis', head_of_department: 'System Administrator', is_active: true, intern_count: 0 },
+  ];
+
+  const DEFAULT_PROGRAMS = [
+    { id: 1, title: 'Data Analytics Internship Program', code: 'PROG-DA', department: 'Data Analytics', department_name: 'Data Analytics', duration_weeks: 12, description: 'Comprehensive data analytics and BI cohort', skills_covered: ['Python', 'SQL', 'Power BI', 'Tableau', 'Excel'], is_active: true },
+    { id: 2, title: 'Full-Stack Software Engineering Cohort', code: 'PROG-SWE', department: 'Software Engineering', department_name: 'Software Engineering', duration_weeks: 12, description: 'Production web application engineering', skills_covered: ['React', 'Next.js', 'Python', 'Django', 'PostgreSQL'], is_active: true },
+    { id: 3, title: 'Applied AI & Machine Learning Track', code: 'PROG-AI', department: 'Artificial Intelligence & ML', department_name: 'Artificial Intelligence & ML', duration_weeks: 16, description: 'Predictive modeling and generative AI engineering', skills_covered: ['Python', 'Scikit-Learn', 'PyTorch', 'SQL'], is_active: true },
+    { id: 4, title: 'Cloud Infrastructure & DevOps Bootcamp', code: 'PROG-CLD', department: 'Cloud & DevOps', department_name: 'Cloud & DevOps', duration_weeks: 8, description: 'Containerization and cloud deployment automation', skills_covered: ['Docker', 'GitHub Actions', 'Linux', 'PostgreSQL'], is_active: true },
+  ];
+
+  const DEFAULT_IMPORT_HISTORY = [
+    {
+      id: 101,
+      file_name: 'summer_cohort_2026_batch1.xlsx',
+      file_type: 'XLSX',
+      total_records: 15,
+      successful_records: 14,
+      failed_records: 1,
+      skipped_records: 0,
+      updated_records: 0,
+      import_status: 'PARTIAL',
+      imported_by_name: 'Sarah Connor',
+      imported_at: new Date(Date.now() - 3 * 86400000).toISOString(),
+      error_details: [
+        {
+          row_number: 9,
+          full_name: 'Vikram Singh',
+          email: 'vikram.invalid-email',
+          phone: '+91 9822011223',
+          department: 'Data Analytics',
+          internship_role: 'Data Analyst Intern',
+          error_reason: 'Invalid email format (vikram.invalid-email)',
+        },
+      ],
+    },
+  ];
+
+  if (cleanUrl === '/hr/departments') {
+    const depts = getStore('hr_departments', DEFAULT_DEPARTMENTS);
+    const interns = getStore('interns', Object.values(INITIAL_USERS).filter(u => u.role === 'INTERN'));
+    if (method.toLowerCase() === 'post') {
+      const newD = {
+        id: Date.now(),
+        name: parsedData.name,
+        code: (parsedData.code || parsedData.name.slice(0, 4)).toUpperCase(),
+        description: parsedData.description || '',
+        head_of_department: parsedData.head_of_department || 'David Miller',
+        is_active: parsedData.is_active !== false,
+        created_at: new Date().toISOString(),
+      };
+      depts.push(newD);
+      setStore('hr_departments', depts);
+      return newD;
+    }
+    return depts.map(d => ({
+      ...d,
+      intern_count: interns.filter(i => (i.department_name || i.department || '').toLowerCase() === d.name.toLowerCase()).length,
+    }));
+  }
+
+  if (cleanUrl.match(/^\/hr\/departments\/\d+$/)) {
+    const dId = parseInt(cleanUrl.split('/')[3]);
+    const depts = getStore('hr_departments', DEFAULT_DEPARTMENTS);
+    if (method.toLowerCase() === 'patch' || method.toLowerCase() === 'put') {
+      const target = depts.find(d => d.id === dId);
+      if (target) {
+        Object.assign(target, parsedData);
+        setStore('hr_departments', depts);
+      }
+      return target || { status: 'updated' };
+    }
+    if (method.toLowerCase() === 'delete') {
+      setStore('hr_departments', depts.filter(d => d.id !== dId));
+      return { status: 'deleted' };
+    }
+  }
+
+  if (cleanUrl === '/hr/programs') {
+    const progs = getStore('hr_programs', DEFAULT_PROGRAMS);
+    if (method.toLowerCase() === 'post') {
+      const newP = {
+        id: Date.now(),
+        title: parsedData.title,
+        code: (parsedData.code || `PROG-${Date.now().toString().slice(-3)}`).toUpperCase(),
+        department: parsedData.department || 'Data Analytics',
+        department_name: parsedData.department || 'Data Analytics',
+        duration_weeks: parseInt(parsedData.duration_weeks) || 12,
+        description: parsedData.description || '',
+        skills_covered: Array.isArray(parsedData.skills_covered)
+          ? parsedData.skills_covered
+          : String(parsedData.skills_covered || 'Python, SQL').split(',').map(s => s.trim()).filter(Boolean),
+        is_active: parsedData.is_active !== false,
+        created_at: new Date().toISOString(),
+      };
+      progs.push(newP);
+      setStore('hr_programs', progs);
+      return newP;
+    }
+    return progs;
+  }
+
+  if (cleanUrl.match(/^\/hr\/programs\/\d+$/)) {
+    const pId = parseInt(cleanUrl.split('/')[3]);
+    const progs = getStore('hr_programs', DEFAULT_PROGRAMS);
+    if (method.toLowerCase() === 'patch' || method.toLowerCase() === 'put') {
+      const target = progs.find(p => p.id === pId);
+      if (target) {
+        Object.assign(target, parsedData);
+        setStore('hr_programs', progs);
+      }
+      return target || { status: 'updated' };
+    }
+    if (method.toLowerCase() === 'delete') {
+      setStore('hr_programs', progs.filter(p => p.id !== pId));
+      return { status: 'deleted' };
+    }
+  }
+
+  if (cleanUrl === '/hr/interns/import/preview' && method.toLowerCase() === 'post') {
+    const rows = parsedData.rows || [];
+    const headers = parsedData.headers || (rows[0] ? Object.keys(rows[0]) : []);
+    const depts = getStore('hr_departments', DEFAULT_DEPARTMENTS);
+    const mentors = getStore('mentors', Object.values(INITIAL_USERS).filter(u => u.role === 'MENTOR'));
+    const existingInterns = getStore('interns', Object.values(INITIAL_USERS).filter(u => u.role === 'INTERN'));
+    const mapping = autoDetectColumnMapping(headers);
+    const validation = validateInternRows(rows, mapping, depts, mentors, existingInterns);
+    return {
+      file_name: parsedData.file_name || 'interns_import.csv',
+      file_type: parsedData.file_type || 'CSV',
+      headers,
+      system_fields: SYSTEM_FIELDS,
+      column_mapping: mapping,
+      total_records: rows.length,
+      raw_rows: rows,
+      validation,
+    };
+  }
+
+  if (cleanUrl === '/hr/interns/import/validate' && method.toLowerCase() === 'post') {
+    const rows = parsedData.rows || [];
+    const mapping = parsedData.column_mapping || null;
+    const depts = getStore('hr_departments', DEFAULT_DEPARTMENTS);
+    const mentors = getStore('mentors', Object.values(INITIAL_USERS).filter(u => u.role === 'MENTOR'));
+    const existingInterns = getStore('interns', Object.values(INITIAL_USERS).filter(u => u.role === 'INTERN'));
+    return validateInternRows(rows, mapping, depts, mentors, existingInterns);
+  }
+
+  if (cleanUrl === '/hr/interns/import/confirm' && method.toLowerCase() === 'post') {
+    const rows = parsedData.rows || [];
+    const mapping = parsedData.column_mapping || null;
+    const fileName = parsedData.file_name || 'interns_import.csv';
+    const fileType = parsedData.file_type || 'CSV';
+    const skipInvalid = parsedData.skip_invalid !== false;
+    const duplicateAction = parsedData.duplicate_action || 'skip';
+    const confirmUpdate = Boolean(parsedData.confirm_update_existing);
+
+    const depts = getStore('hr_departments', DEFAULT_DEPARTMENTS);
+    const mentors = getStore('mentors', Object.values(INITIAL_USERS).filter(u => u.role === 'MENTOR'));
+    const existingInterns = getStore('interns', Object.values(INITIAL_USERS).filter(u => u.role === 'INTERN'));
+    const validation = validateInternRows(rows, mapping, depts, mentors, existingInterns);
+    const histories = getStore('hr_import_history', DEFAULT_IMPORT_HISTORY);
+
+    if (!skipInvalid && validation.invalid_count > 0) {
+      const failedReport = validation.rows
+        .filter(r => !r.is_valid)
+        .map(r => ({
+          row_number: r.row_number,
+          full_name: sanitizeSpreadsheetCell(r.full_name),
+          email: sanitizeSpreadsheetCell(r.email),
+          phone: sanitizeSpreadsheetCell(r.phone),
+          department: sanitizeSpreadsheetCell(r.department),
+          error_reason: r.error_reasons.join('; ') || 'Validation failed',
+        }));
+      const histEntry = {
+        id: Date.now(),
+        file_name: fileName,
+        file_type: fileType,
+        total_records: validation.total_records,
+        successful_records: 0,
+        failed_records: validation.invalid_count,
+        skipped_records: validation.total_records - validation.invalid_count,
+        updated_records: 0,
+        import_status: 'FAILED',
+        imported_by_name: activeUser?.full_name || 'Sarah Connor',
+        imported_at: new Date().toISOString(),
+        error_details: failedReport,
+      };
+      histories.unshift(histEntry);
+      setStore('hr_import_history', histories);
+      throw {
+        response: {
+          status: 400,
+          data: {
+            status: 'aborted',
+            detail: 'Import aborted because skip_invalid is false and invalid records were found. No records were modified.',
+            ...histEntry,
+            failed_rows: failedReport,
+          },
+        },
+      };
+    }
+
+    let successful = 0;
+    let failed = 0;
+    let skipped = 0;
+    let updated = 0;
+    const failedRows = [];
+
+    validation.rows.forEach((r) => {
+      if (!r.is_valid) {
+        failed += 1;
+        failedRows.push({
+          row_number: r.row_number,
+          full_name: sanitizeSpreadsheetCell(r.full_name),
+          email: sanitizeSpreadsheetCell(r.email),
+          phone: sanitizeSpreadsheetCell(r.phone),
+          college: sanitizeSpreadsheetCell(r.college),
+          course: sanitizeSpreadsheetCell(r.course),
+          department: sanitizeSpreadsheetCell(r.department),
+          internship_role: sanitizeSpreadsheetCell(r.internship_role),
+          start_date: sanitizeSpreadsheetCell(r.start_date),
+          end_date: sanitizeSpreadsheetCell(r.end_date),
+          assigned_mentor: sanitizeSpreadsheetCell(r.assigned_mentor),
+          status: sanitizeSpreadsheetCell(r.status),
+          error_reason: r.error_reasons.join('; ') || 'Validation error',
+        });
+        return;
+      }
+
+      const emailLower = r.email.toLowerCase();
+      const existing = existingInterns.find(i => (i.email || '').toLowerCase() === emailLower);
+      const pts = r.full_name.trim().split(' ');
+
+      if (existing) {
+        if (duplicateAction === 'update' && confirmUpdate) {
+          existing.first_name = pts[0] || existing.first_name;
+          existing.last_name = pts.slice(1).join(' ') || existing.last_name;
+          existing.full_name = r.full_name;
+          existing.phone = r.phone || existing.phone;
+          if (r.gender) existing.gender = r.gender;
+          if (r.college) existing.college = r.college;
+          if (r.course) {
+            existing.course = r.course;
+            existing.education_qualification = r.course;
+          }
+          if (r.department) {
+            existing.department = r.department;
+            existing.department_name = r.department;
+          }
+          if (r.internship_role) existing.internship_role = r.internship_role;
+          if (r.start_date) existing.start_date = r.start_date;
+          if (r.end_date) existing.end_date = r.end_date;
+          existing.internship_duration = calculateDuration(existing.start_date, existing.end_date) || existing.internship_duration;
+          if (r.mentor_id) {
+            existing.assigned_mentor = r.mentor_id;
+            existing.assigned_mentor_name = r.assigned_mentor;
+          }
+          if (r.status) {
+            existing.status = r.status;
+            existing.intern_status = r.status;
+          }
+          if (r.address) existing.address = r.address;
+          updated += 1;
+        } else {
+          skipped += 1;
+        }
+        return;
+      }
+
+      const nextCodeNum = existingInterns.length + 1;
+      existingInterns.unshift({
+        id: Date.now() + Math.floor(Math.random() * 10000),
+        intern_code: `INT-2026-${String(nextCodeNum).padStart(4, '0')}`,
+        username: emailLower.split('@')[0].replace(/[^a-zA-Z0-9_]/g, '_') + '_' + nextCodeNum,
+        first_name: pts[0] || 'Intern',
+        last_name: pts.slice(1).join(' ') || '',
+        full_name: r.full_name,
+        email: r.email,
+        phone: r.phone,
+        gender: r.gender || '',
+        college: r.college || '',
+        course: r.course || '',
+        education_qualification: r.course || '',
+        department: r.department || 'Data Analytics',
+        department_name: r.department || 'Data Analytics',
+        internship_role: r.internship_role || 'Data Analytics Intern',
+        start_date: r.start_date || '',
+        end_date: r.end_date || '',
+        internship_duration: calculateDuration(r.start_date, r.end_date),
+        assigned_mentor: r.mentor_id || null,
+        assigned_mentor_name: r.mentor_id ? r.assigned_mentor : null,
+        hr_contact: 2,
+        hr_contact_name: activeUser?.full_name || 'Sarah Connor',
+        status: r.status || 'Active',
+        intern_status: r.status || 'Active',
+        address: r.address || '',
+        source: 'Bulk Import',
+        role: 'INTERN',
+        is_active_intern: !['Terminated', 'Completed'].includes(r.status),
+        created_at: new Date().toISOString(),
+      });
+      successful += 1;
+    });
+
+    setStore('interns', existingInterns);
+
+    const importStatus =
+      failed > 0 && (successful > 0 || updated > 0)
+        ? 'PARTIAL'
+        : failed > 0 && successful === 0 && updated === 0
+        ? 'FAILED'
+        : 'COMPLETED';
+
+    const histRecord = {
+      id: Date.now(),
+      file_name: fileName,
+      file_type: fileType,
+      total_records: validation.total_records,
+      successful_records: successful,
+      failed_records: failed,
+      skipped_records: skipped,
+      updated_records: updated,
+      import_status: importStatus,
+      imported_by_name: activeUser?.full_name || 'Sarah Connor',
+      imported_at: new Date().toISOString(),
+      error_details: failedRows,
+    };
+    histories.unshift(histRecord);
+    setStore('hr_import_history', histories);
+
+    return {
+      status: 'completed',
+      history_id: histRecord.id,
+      ...histRecord,
+      failed_rows: failedRows,
+    };
+  }
+
+  if (cleanUrl === '/hr/interns/import/history') {
+    return getStore('hr_import_history', DEFAULT_IMPORT_HISTORY);
   }
 
   return { status: 'ok' };
